@@ -2,23 +2,17 @@ openapi: 3.1.0
 info:
   title: Api
   version: 0.1.0
-  description: VPS Manager API specification
+  description: Local File Manager API
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
     description: Health operations
-  - name: servers
-    description: VPS server management
   - name: files
-    description: File system operations
+    description: Local file system operations
   - name: terminal
     description: Terminal/command execution
-  - name: processes
-    description: Process management
-  - name: stats
-    description: Server statistics
 
 paths:
   /healthz:
@@ -26,7 +20,6 @@ paths:
       operationId: healthCheck
       tags: [health]
       summary: Health check
-      description: Returns server health status
       responses:
         "200":
           description: Healthy
@@ -35,153 +28,12 @@ paths:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
 
-  /servers:
-    get:
-      operationId: listServers
-      tags: [servers]
-      summary: List all VPS servers
-      responses:
-        "200":
-          description: List of servers
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  $ref: "#/components/schemas/Server"
-    post:
-      operationId: createServer
-      tags: [servers]
-      summary: Add a new VPS server
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/CreateServerBody"
-      responses:
-        "201":
-          description: Server created
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Server"
-        "400":
-          description: Invalid input
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-
-  /servers/{id}:
-    get:
-      operationId: getServer
-      tags: [servers]
-      summary: Get a server by ID
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: integer
-      responses:
-        "200":
-          description: Server details
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Server"
-        "404":
-          description: Server not found
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-    patch:
-      operationId: updateServer
-      tags: [servers]
-      summary: Update server details
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: integer
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/UpdateServerBody"
-      responses:
-        "200":
-          description: Updated server
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Server"
-        "404":
-          description: Server not found
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-    delete:
-      operationId: deleteServer
-      tags: [servers]
-      summary: Delete a server
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: integer
-      responses:
-        "204":
-          description: Deleted
-        "404":
-          description: Not found
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-
-  /servers/{id}/connect:
-    post:
-      operationId: testServerConnection
-      tags: [servers]
-      summary: Test SSH connection to server
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: integer
-      responses:
-        "200":
-          description: Connection result
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ConnectionResult"
-        "404":
-          description: Server not found
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-
-  /servers/{id}/files:
+  /files/list:
     get:
       operationId: listFiles
       tags: [files]
-      summary: List files in a directory on a server
+      summary: List directory contents
       parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: integer
         - name: path
           in: query
           required: false
@@ -190,35 +42,30 @@ paths:
             default: "/"
       responses:
         "200":
-          description: File listing
+          description: Directory listing
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/FileListResponse"
+                $ref: "#/components/schemas/DirectoryListing"
         "400":
-          description: Error
+          description: Bad request
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
-        "404":
-          description: Server not found
+        "500":
+          description: Server error
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
-  /servers/{id}/files/read:
+  /files/read:
     get:
       operationId: readFile
       tags: [files]
-      summary: Read file contents
+      summary: Read file content
       parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: integer
         - name: path
           in: query
           required: true
@@ -232,29 +79,23 @@ paths:
               schema:
                 $ref: "#/components/schemas/FileContent"
         "400":
-          description: Error
+          description: Bad request
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
-        "404":
-          description: Not found
+        "500":
+          description: Server error
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
-  /servers/{id}/files/write:
+  /files/write:
     post:
       operationId: writeFile
       tags: [files]
-      summary: Write content to a file
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: integer
+      summary: Write file content (creates or overwrites)
       requestBody:
         required: true
         content:
@@ -263,29 +104,30 @@ paths:
               $ref: "#/components/schemas/WriteFileBody"
       responses:
         "200":
-          description: File written
+          description: Written successfully
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/SuccessResponse"
+                $ref: "#/components/schemas/OkResponse"
         "400":
-          description: Error
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Server error
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
-  /servers/{id}/files/delete:
+  /files/delete:
     delete:
       operationId: deleteFile
       tags: [files]
       summary: Delete a file or directory
       parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: integer
         - name: path
           in: query
           required: true
@@ -296,62 +138,63 @@ paths:
           required: false
           schema:
             type: boolean
+            default: false
       responses:
         "200":
-          description: Deleted
+          description: Deleted successfully
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/SuccessResponse"
+                $ref: "#/components/schemas/OkResponse"
         "400":
-          description: Error
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Server error
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
-  /servers/{id}/files/mkdir:
+  /files/mkdir:
     post:
       operationId: createDirectory
       tags: [files]
       summary: Create a directory
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: integer
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/CreateDirectoryBody"
+              $ref: "#/components/schemas/MkdirBody"
       responses:
         "200":
           description: Directory created
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/SuccessResponse"
+                $ref: "#/components/schemas/OkResponse"
         "400":
-          description: Error
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Server error
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
-  /servers/{id}/files/rename:
+  /files/rename:
     post:
       operationId: renameFile
       tags: [files]
-      summary: Rename or move a file/directory
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: integer
+      summary: Rename or move a file or directory
       requestBody:
         required: true
         content:
@@ -360,29 +203,29 @@ paths:
               $ref: "#/components/schemas/RenameFileBody"
       responses:
         "200":
-          description: Renamed
+          description: Renamed/moved successfully
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/SuccessResponse"
+                $ref: "#/components/schemas/OkResponse"
         "400":
-          description: Error
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Server error
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
-  /servers/{id}/exec:
+  /terminal/exec:
     post:
       operationId: execCommand
       tags: [terminal]
-      summary: Execute a command on the server
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: integer
+      summary: Execute a shell command
       requestBody:
         required: true
         content:
@@ -391,99 +234,19 @@ paths:
               $ref: "#/components/schemas/ExecCommandBody"
       responses:
         "200":
-          description: Command output
+          description: Command result
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ExecResult"
         "400":
-          description: Error
+          description: Bad request
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
-
-  /servers/{id}/processes:
-    get:
-      operationId: listProcesses
-      tags: [processes]
-      summary: List running processes on the server
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: integer
-      responses:
-        "200":
-          description: Process list
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ProcessListResponse"
-        "400":
-          description: Error
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-
-  /servers/{id}/processes/{pid}/kill:
-    post:
-      operationId: killProcess
-      tags: [processes]
-      summary: Kill a process by PID
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: integer
-        - name: pid
-          in: path
-          required: true
-          schema:
-            type: integer
-      requestBody:
-        required: false
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/KillProcessBody"
-      responses:
-        "200":
-          description: Process killed
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/SuccessResponse"
-        "400":
-          description: Error
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-
-  /servers/{id}/stats:
-    get:
-      operationId: getServerStats
-      tags: [stats]
-      summary: Get system resource statistics for a server
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: integer
-      responses:
-        "200":
-          description: Server statistics
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ServerStats"
-        "400":
-          description: Error
+        "500":
+          description: Server error
           content:
             application/json:
               schema:
@@ -493,142 +256,31 @@ components:
   schemas:
     HealthStatus:
       type: object
+      required: [status, uptime]
       properties:
         status:
           type: string
-      required:
-        - status
+          enum: [ok]
+        uptime:
+          type: number
 
     ErrorResponse:
       type: object
+      required: [error]
       properties:
         error:
           type: string
-      required:
-        - error
 
-    SuccessResponse:
+    OkResponse:
       type: object
+      required: [ok]
       properties:
-        success:
+        ok:
           type: boolean
-        message:
-          type: string
-      required:
-        - success
-        - message
-
-    Server:
-      type: object
-      properties:
-        id:
-          type: integer
-        name:
-          type: string
-        host:
-          type: string
-        port:
-          type: integer
-        username:
-          type: string
-        authType:
-          type: string
-          enum: [password, key]
-        status:
-          type: string
-          enum: [unknown, connected, disconnected, error]
-        notes:
-          type: ["string", "null"]
-        createdAt:
-          type: string
-          format: date-time
-        updatedAt:
-          type: string
-          format: date-time
-      required:
-        - id
-        - name
-        - host
-        - port
-        - username
-        - authType
-        - status
-        - createdAt
-        - updatedAt
-
-    CreateServerBody:
-      type: object
-      properties:
-        name:
-          type: string
-        host:
-          type: string
-        port:
-          type: integer
-          default: 22
-        username:
-          type: string
-        authType:
-          type: string
-          enum: [password, key]
-        password:
-          type: ["string", "null"]
-        privateKey:
-          type: ["string", "null"]
-        passphrase:
-          type: ["string", "null"]
-        notes:
-          type: ["string", "null"]
-      required:
-        - name
-        - host
-        - username
-        - authType
-
-    UpdateServerBody:
-      type: object
-      properties:
-        name:
-          type: ["string", "null"]
-        host:
-          type: ["string", "null"]
-        port:
-          type: ["integer", "null"]
-        username:
-          type: ["string", "null"]
-        authType:
-          type: ["string", "null"]
-        password:
-          type: ["string", "null"]
-        privateKey:
-          type: ["string", "null"]
-        passphrase:
-          type: ["string", "null"]
-        notes:
-          type: ["string", "null"]
-
-    ConnectionResult:
-      type: object
-      properties:
-        success:
-          type: boolean
-        message:
-          type: string
-        serverInfo:
-          type: ["object", "null"]
-          properties:
-            os:
-              type: string
-            uptime:
-              type: string
-            hostname:
-              type: string
-      required:
-        - success
-        - message
 
     FileEntry:
       type: object
+      required: [name, path, type, size, permissions, modifiedAt]
       properties:
         name:
           type: string
@@ -638,240 +290,83 @@ components:
           type: string
           enum: [file, directory, symlink, other]
         size:
-          type: ["integer", "null"]
+          type: number
+          nullable: true
         permissions:
-          type: string
-        owner:
-          type: string
-        group:
           type: string
         modifiedAt:
           type: string
-      required:
-        - name
-        - path
-        - type
-        - permissions
-        - owner
-        - group
-        - modifiedAt
+          format: date-time
 
-    FileListResponse:
+    DirectoryListing:
       type: object
+      required: [path, entries]
       properties:
         path:
           type: string
+        parentPath:
+          type: string
+          nullable: true
         entries:
           type: array
           items:
             $ref: "#/components/schemas/FileEntry"
-        parentPath:
-          type: ["string", "null"]
-      required:
-        - path
-        - entries
 
     FileContent:
       type: object
+      required: [path, content, isBinary, size]
       properties:
         path:
           type: string
         content:
           type: string
-        size:
-          type: integer
         isBinary:
           type: boolean
-      required:
-        - path
-        - content
-        - size
-        - isBinary
+        size:
+          type: number
 
     WriteFileBody:
       type: object
+      required: [path, content]
       properties:
         path:
           type: string
         content:
           type: string
-      required:
-        - path
-        - content
 
-    CreateDirectoryBody:
+    MkdirBody:
       type: object
+      required: [path]
       properties:
         path:
           type: string
-      required:
-        - path
 
     RenameFileBody:
       type: object
+      required: [oldPath, newPath]
       properties:
         oldPath:
           type: string
         newPath:
           type: string
-      required:
-        - oldPath
-        - newPath
 
     ExecCommandBody:
       type: object
+      required: [command]
       properties:
         command:
           type: string
         cwd:
-          type: ["string", "null"]
-      required:
-        - command
+          type: string
+          nullable: true
 
     ExecResult:
       type: object
+      required: [stdout, stderr, exitCode]
       properties:
         stdout:
           type: string
         stderr:
           type: string
         exitCode:
-          type: integer
-        command:
-          type: string
-      required:
-        - stdout
-        - stderr
-        - exitCode
-        - command
-
-    ProcessEntry:
-      type: object
-      properties:
-        pid:
-          type: integer
-        user:
-          type: string
-        cpu:
           type: number
-        mem:
-          type: number
-        command:
-          type: string
-        status:
-          type: string
-      required:
-        - pid
-        - user
-        - cpu
-        - mem
-        - command
-        - status
-
-    ProcessListResponse:
-      type: object
-      properties:
-        processes:
-          type: array
-          items:
-            $ref: "#/components/schemas/ProcessEntry"
-        count:
-          type: integer
-      required:
-        - processes
-        - count
-
-    KillProcessBody:
-      type: object
-      properties:
-        signal:
-          type: string
-          enum: [SIGTERM, SIGKILL, SIGINT]
-          default: SIGTERM
-
-    ServerStats:
-      type: object
-      properties:
-        cpu:
-          $ref: "#/components/schemas/CpuStats"
-        memory:
-          $ref: "#/components/schemas/MemoryStats"
-        disk:
-          type: array
-          items:
-            $ref: "#/components/schemas/DiskStats"
-        uptime:
-          type: string
-        loadAverage:
-          type: array
-          items:
-            type: number
-        os:
-          type: string
-        hostname:
-          type: string
-        kernel:
-          type: string
-      required:
-        - cpu
-        - memory
-        - disk
-        - uptime
-        - loadAverage
-        - os
-        - hostname
-        - kernel
-
-    CpuStats:
-      type: object
-      properties:
-        usage:
-          type: number
-        cores:
-          type: integer
-        model:
-          type: string
-      required:
-        - usage
-        - cores
-        - model
-
-    MemoryStats:
-      type: object
-      properties:
-        total:
-          type: integer
-        used:
-          type: integer
-        free:
-          type: integer
-        usagePercent:
-          type: number
-      required:
-        - total
-        - used
-        - free
-        - usagePercent
-
-    DiskStats:
-      type: object
-      properties:
-        filesystem:
-          type: string
-        size:
-          type: string
-        used:
-          type: string
-        available:
-          type: string
-        usePercent:
-          type: string
-        mountedOn:
-          type: string
-      required:
-        - filesystem
-        - size
-        - used
-        - available
-        - usePercent
-        - mountedOn

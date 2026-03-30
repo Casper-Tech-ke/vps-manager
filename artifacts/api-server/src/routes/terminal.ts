@@ -1,49 +1,29 @@
-import { Router, type IRouter } from "express";
-import {
-  ExecCommandBody,
-  ExecCommandParams,
-} from "@workspace/api-zod";
-import { withSshClient, execCommand, getServerById } from "../lib/ssh";
+import { Router } from "express";
+import { exec } from "child_process";
+import { ExecCommandBody } from "@workspace/api-zod";
 
-const router: IRouter = Router();
+const router = Router();
 
-router.post("/servers/:id/exec", async (req, res): Promise<void> => {
-  const idParsed = ExecCommandParams.safeParse(req.params);
-  if (!idParsed.success) {
-    res.status(400).json({ error: idParsed.error.message });
-    return;
-  }
-
+router.post("/terminal/exec", (req, res) => {
   const parsed = ExecCommandBody.safeParse(req.body);
   if (!parsed.success) {
-    res.status(400).json({ error: parsed.error.message });
-    return;
+    return res.status(400).json({ error: parsed.error.message });
   }
+  const { command, cwd } = parsed.data;
+  const options = {
+    cwd: cwd ?? process.cwd(),
+    timeout: 30000,
+    maxBuffer: 1024 * 1024 * 4,
+    shell: "/bin/bash" as string | undefined,
+  };
 
-  const server = await getServerById(idParsed.data.id);
-  if (!server) {
-    res.status(404).json({ error: "Server not found" });
-    return;
-  }
-
-  try {
-    const result = await withSshClient(server, async (client) => {
-      let cmd = parsed.data.command;
-      if (parsed.data.cwd) {
-        cmd = `cd "${parsed.data.cwd.replace(/"/g, '\\"')}" && ${cmd}`;
-      }
-      return await execCommand(client, cmd);
-    });
-
+  exec(command, options, (err, stdout, stderr) => {
     res.json({
-      stdout: result.stdout,
-      stderr: result.stderr,
-      exitCode: result.exitCode,
-      command: parsed.data.command,
+      stdout: stdout ?? "",
+      stderr: stderr ?? "",
+      exitCode: err?.code ?? (err ? 1 : 0),
     });
-  } catch (err: any) {
-    res.status(400).json({ error: err.message || "Failed to execute command" });
-  }
+  });
 });
 
 export default router;

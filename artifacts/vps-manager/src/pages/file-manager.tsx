@@ -9,12 +9,14 @@ import {
   useExecCommand,
 } from "@workspace/api-client-react";
 import { useState, useEffect, useRef } from "react";
+import SyntaxHighlighter from "react-syntax-highlighter";
+import { atomOneDark } from "react-syntax-highlighter/dist/esm/styles/hljs";
 import {
   Folder, FileText, File as FileIcon, Image, Code2, Database,
   ChevronRight, ArrowLeft, RefreshCw, FolderPlus, FilePlus,
   Trash2, Edit2, MoveRight, X, Save, Terminal, AlertTriangle,
   HardDrive, Home, Play, ChevronDown, Copy, Check, Eraser,
-  PanelLeft, FolderOpen,
+  PanelLeft, FolderOpen, Music, Video, ImageIcon,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -74,6 +76,51 @@ type DialogMode = "mkdir" | "newfile" | "rename" | "move";
 const stripAnsi = (str: string) =>
   str.replace(/\x1B\[[0-9;]*[a-zA-Z]|\x1B\][^\x07\x1B]*(?:\x07|\x1B\\)|\x1B[A-Z\\[\]^_]|\r/g, "");
 
+// ── File type detection ───────────────────────────────────────────────────────
+
+type MediaKind = "image" | "video" | "audio" | "code" | "text";
+
+const IMAGE_EXTS = new Set(["png","jpg","jpeg","gif","webp","svg","ico","bmp","tiff","avif"]);
+const VIDEO_EXTS = new Set(["mp4","webm","mkv","mov","avi","ogv","m4v","flv","3gp"]);
+const AUDIO_EXTS = new Set(["mp3","wav","ogg","flac","m4a","aac","opus","wma"]);
+const CODE_EXTS  = new Set([
+  "js","mjs","cjs","ts","tsx","jsx","py","sh","bash","zsh","fish","rb","go","rs",
+  "c","cpp","cc","h","java","php","sql","yaml","yml","json","toml","ini","conf",
+  "env","xml","html","htm","css","scss","sass","md","mdx","dockerfile","lua",
+  "swift","kt","cs","r","pl","vim","tf","hcl","nginx","nix",
+]);
+
+function detectKind(filename: string): MediaKind {
+  const ext = filename.split(".").pop()?.toLowerCase() ?? "";
+  if (IMAGE_EXTS.has(ext)) return "image";
+  if (VIDEO_EXTS.has(ext)) return "video";
+  if (AUDIO_EXTS.has(ext)) return "audio";
+  if (CODE_EXTS.has(ext))  return "code";
+  return "text";
+}
+
+const EXT_LANG: Record<string, string> = {
+  js: "javascript", mjs: "javascript", cjs: "javascript",
+  ts: "typescript", mts: "typescript",
+  tsx: "tsx", jsx: "jsx",
+  py: "python",
+  sh: "bash", bash: "bash", zsh: "bash", fish: "bash",
+  rb: "ruby", go: "go", rs: "rust",
+  c: "c", h: "c", cpp: "cpp", cc: "cpp",
+  java: "java", php: "php", sql: "sql",
+  yaml: "yaml", yml: "yaml", json: "json", toml: "ini",
+  xml: "xml", html: "html", htm: "html",
+  css: "css", scss: "scss", sass: "scss",
+  md: "markdown", mdx: "markdown",
+  dockerfile: "dockerfile",
+  lua: "lua", swift: "swift", kt: "kotlin", cs: "csharp",
+  r: "r", pl: "perl", vim: "vim",
+  tf: "hcl", hcl: "hcl", nix: "nix",
+  env: "bash", ini: "ini", conf: "nginx",
+};
+
+const rawUrl = (p: string) => `/api/files/raw?path=${encodeURIComponent(p)}`;
+
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export default function FileManager() {
@@ -115,9 +162,14 @@ export default function FileManager() {
     { query: { queryKey: getListFilesQueryKey({ path: currentPath }) } }
   );
 
+  const fileKind: MediaKind | null = selectedFile
+    ? detectKind(selectedFile.split("/").pop() ?? "")
+    : null;
+  const isMedia = fileKind === "image" || fileKind === "video" || fileKind === "audio";
+
   const { data: fileData, isLoading: fileLoading } = useReadFile(
     { path: selectedFile! },
-    { query: { enabled: !!selectedFile, queryKey: getReadFileQueryKey({ path: selectedFile! }) } }
+    { query: { enabled: !!selectedFile && !isMedia, queryKey: getReadFileQueryKey({ path: selectedFile! }) } }
   );
 
   useEffect(() => {
@@ -541,9 +593,15 @@ export default function FileManager() {
         {/* ── File viewer / editor ── */}
         {rightPanel === "file" && selectedFile && (
           <div className="flex-1 flex flex-col min-h-0 bg-[#09090b]">
+            {/* Header */}
             <div className="h-12 border-b border-border bg-card/40 flex items-center justify-between px-4 flex-shrink-0 gap-3">
               <div className="flex items-center gap-2 min-w-0">
-                <Code2 className="w-4 h-4 text-primary flex-shrink-0" />
+                {fileKind === "image"  && <ImageIcon className="w-4 h-4 text-purple-400 flex-shrink-0" />}
+                {fileKind === "video"  && <Video     className="w-4 h-4 text-cyan-400   flex-shrink-0" />}
+                {fileKind === "audio"  && <Music     className="w-4 h-4 text-green-400  flex-shrink-0" />}
+                {fileKind === "code"   && <Code2     className="w-4 h-4 text-blue-400   flex-shrink-0" />}
+                {fileKind === "text"   && <FileText  className="w-4 h-4 text-primary    flex-shrink-0" />}
+                {fileKind === null     && <FileIcon  className="w-4 h-4 text-muted-foreground flex-shrink-0" />}
                 <span className="font-mono text-sm truncate text-primary" title={selectedFile}>
                   {selectedFile.split("/").pop()}
                 </span>
@@ -568,7 +626,7 @@ export default function FileManager() {
                   </>
                 ) : (
                   <>
-                    {!fileData?.isBinary && (
+                    {!isMedia && !fileData?.isBinary && (
                       <Button variant="outline" size="sm" className="h-7 font-mono text-xs" onClick={() => setIsEditing(true)}>
                         <Edit2 className="w-3 h-3 mr-1.5" /> Edit
                       </Button>
@@ -581,31 +639,101 @@ export default function FileManager() {
               </div>
             </div>
 
-            <div className="flex-1 min-h-0 flex flex-col">
-              {fileLoading ? (
-                <div className="flex items-center justify-center h-full gap-3 text-muted-foreground">
-                  <RefreshCw className="w-5 h-5 animate-spin" />
-                  <span className="font-mono text-sm">Loading…</span>
+            {/* Body */}
+            <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
+              {/* Image viewer */}
+              {fileKind === "image" && (
+                <div className="flex-1 flex items-center justify-center p-4 overflow-auto bg-[#09090b]">
+                  <img
+                    src={rawUrl(selectedFile)}
+                    alt={selectedFile.split("/").pop()}
+                    className="max-w-full max-h-full object-contain rounded shadow-lg"
+                    style={{ imageRendering: "auto" }}
+                  />
                 </div>
-              ) : fileData?.isBinary ? (
-                <div className="flex flex-col items-center justify-center h-full gap-3 text-muted-foreground">
-                  <FileIcon className="w-14 h-14 opacity-10" />
-                  <p className="font-mono text-sm">Binary file — cannot display</p>
-                  <p className="text-xs opacity-50 font-mono">{formatSize(fileData.size)}</p>
+              )}
+
+              {/* Video player */}
+              {fileKind === "video" && (
+                <div className="flex-1 flex items-center justify-center p-4 bg-black overflow-hidden">
+                  <video
+                    key={selectedFile}
+                    src={rawUrl(selectedFile)}
+                    controls
+                    className="max-w-full max-h-full rounded shadow-lg"
+                    style={{ maxHeight: "calc(100vh - 140px)" }}
+                  />
                 </div>
-              ) : isEditing ? (
-                <Textarea
-                  value={fileContent}
-                  onChange={(e) => setFileContent(e.target.value)}
-                  className="flex-1 h-full font-mono text-sm bg-transparent border-0 rounded-none resize-none focus-visible:ring-0 p-4 leading-relaxed"
-                  spellCheck={false}
-                />
-              ) : (
-                <ScrollArea className="flex-1">
-                  <pre className="p-4 font-mono text-xs leading-relaxed whitespace-pre-wrap break-all text-muted-foreground">
-                    {fileContent || <span className="italic opacity-30">Empty file</span>}
-                  </pre>
-                </ScrollArea>
+              )}
+
+              {/* Audio player */}
+              {fileKind === "audio" && (
+                <div className="flex-1 flex flex-col items-center justify-center gap-6 p-8 bg-[#09090b]">
+                  <Music className="w-20 h-20 text-green-400/30" />
+                  <p className="font-mono text-sm text-muted-foreground truncate max-w-xs text-center">
+                    {selectedFile.split("/").pop()}
+                  </p>
+                  <audio
+                    key={selectedFile}
+                    src={rawUrl(selectedFile)}
+                    controls
+                    className="w-full max-w-md"
+                  />
+                </div>
+              )}
+
+              {/* Text / code viewer (non-media) */}
+              {!isMedia && (
+                <>
+                  {fileLoading ? (
+                    <div className="flex items-center justify-center h-full gap-3 text-muted-foreground">
+                      <RefreshCw className="w-5 h-5 animate-spin" />
+                      <span className="font-mono text-sm">Loading…</span>
+                    </div>
+                  ) : fileData?.isBinary ? (
+                    <div className="flex flex-col items-center justify-center h-full gap-3 text-muted-foreground">
+                      <FileIcon className="w-14 h-14 opacity-10" />
+                      <p className="font-mono text-sm">Binary file — cannot display</p>
+                      <p className="text-xs opacity-50 font-mono">{formatSize(fileData.size)}</p>
+                    </div>
+                  ) : isEditing ? (
+                    <Textarea
+                      value={fileContent}
+                      onChange={(e) => setFileContent(e.target.value)}
+                      className="flex-1 h-full font-mono text-sm bg-transparent border-0 rounded-none resize-none focus-visible:ring-0 p-4 leading-relaxed"
+                      spellCheck={false}
+                    />
+                  ) : fileKind === "code" && fileContent ? (
+                    <ScrollArea className="flex-1">
+                      <SyntaxHighlighter
+                        language={EXT_LANG[selectedFile.split(".").pop()?.toLowerCase() ?? ""] ?? "plaintext"}
+                        style={atomOneDark}
+                        customStyle={{
+                          margin: 0,
+                          padding: "1rem",
+                          background: "transparent",
+                          fontSize: "0.75rem",
+                          lineHeight: "1.6",
+                        }}
+                        wrapLongLines={true}
+                        showLineNumbers={true}
+                        lineNumberStyle={{ color: "#4b5563", minWidth: "2.5em", paddingRight: "1em", userSelect: "none" }}
+                      >
+                        {fileContent}
+                      </SyntaxHighlighter>
+                    </ScrollArea>
+                  ) : (
+                    <ScrollArea className="flex-1">
+                      {fileContent ? (
+                        <pre className="p-4 font-mono text-xs leading-relaxed whitespace-pre-wrap break-all text-muted-foreground">
+                          {fileContent}
+                        </pre>
+                      ) : (
+                        <div className="p-4 font-mono text-xs text-muted-foreground/30 italic">Empty file</div>
+                      )}
+                    </ScrollArea>
+                  )}
+                </>
               )}
             </div>
           </div>

@@ -40,18 +40,25 @@ No SSH, no remote connections. Reads/writes the local filesystem via Node.js `fs
 
 ### Features
 - **Browse**: Navigate the full filesystem including root (`/`)
-- **View**: Read text files with syntax-aware icons; binary files show a "cannot display" notice
-- **Edit**: In-browser text editor with save
+- **View**: File type auto-detection from extension; appropriate viewer per type
+  - **Images** (png, jpg, gif, webp, svg, etc.): inline `<img>` viewer
+  - **Video** (mp4, webm, mkv, mov, etc.): native `<video controls>` player
+  - **Audio** (mp3, wav, ogg, flac, m4a, etc.): native `<audio controls>` player
+  - **Code files**: syntax highlighted with `react-syntax-highlighter` (atomOneDark theme)
+  - **Text/logs**: plain preformatted view
+  - **Binary**: "cannot display" notice
+- **Edit**: In-browser text editor with save (text/code files only)
 - **Create**: New files (created empty, then opened for editing) and new directories
 - **Delete**: With confirmation dialog; recursive delete for directories
 - **Rename**: Rename a file/folder within its parent directory
 - **Move**: Move a file or folder to any absolute destination path
-- **Terminal**: Run shell commands on the server, with current directory as cwd
+- **Terminal**: Run shell commands on the server; `cd` persists working directory
 
 ### API Endpoints
 All endpoints are under `/api`:
 - `GET /files/list?path=` — list directory contents (sorted dirs-first)
-- `GET /files/read?path=` — read file content (detects binary; max 5MB text)
+- `GET /files/read?path=` — read file content as JSON (detects binary; max 5MB text)
+- `GET /files/raw?path=` — stream raw file bytes with correct Content-Type (for media)
 - `POST /files/write` — write/create file `{ path, content }`
 - `DELETE /files/delete?path=&recursive=` — delete file or directory
 - `POST /files/mkdir` — create directory (recursive) `{ path }`

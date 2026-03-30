@@ -1,7 +1,28 @@
 import { Router } from "express";
 import fs from "fs/promises";
+import { createReadStream } from "fs";
 import path from "path";
+
+const MIME_MAP: Record<string, string> = {
+  // Images
+  png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", gif: "image/gif",
+  webp: "image/webp", svg: "image/svg+xml", ico: "image/x-icon", bmp: "image/bmp",
+  tiff: "image/tiff", avif: "image/avif",
+  // Video
+  mp4: "video/mp4", webm: "video/webm", mkv: "video/x-matroska", mov: "video/quicktime",
+  avi: "video/x-msvideo", ogv: "video/ogg", m4v: "video/x-m4v", flv: "video/x-flv",
+  "3gp": "video/3gpp",
+  // Audio
+  mp3: "audio/mpeg", wav: "audio/wav", ogg: "audio/ogg", flac: "audio/flac",
+  m4a: "audio/mp4", aac: "audio/aac", opus: "audio/opus", wma: "audio/x-ms-wma",
+  // Text / Code
+  txt: "text/plain", md: "text/plain", json: "application/json", xml: "application/xml",
+  html: "text/html", css: "text/css", js: "text/javascript", ts: "text/typescript",
+  // Fallback
+  pdf: "application/pdf",
+};
 import { ListFilesQueryParams, ReadFileQueryParams, WriteFileBody, DeleteFileQueryParams, CreateDirectoryBody, RenameFileBody } from "@workspace/api-zod";
+
 
 const router = Router();
 
@@ -160,6 +181,31 @@ router.post("/files/rename", async (req, res) => {
     res.json({ ok: true });
   } catch (err: any) {
     res.status(500).json({ error: err?.message ?? "Failed to rename/move" });
+  }
+});
+
+router.get("/files/raw", async (req, res) => {
+  const rawPath = req.query.path;
+  if (typeof rawPath !== "string" || !rawPath) {
+    return res.status(400).json({ error: "path is required" });
+  }
+  const filePath = path.resolve(rawPath);
+  if (filePath !== rawPath && !filePath.startsWith("/")) {
+    return res.status(400).json({ error: "Invalid path" });
+  }
+  try {
+    const stat = await fs.stat(filePath);
+    if (!stat.isFile()) {
+      return res.status(400).json({ error: "Not a file" });
+    }
+    const ext = path.extname(filePath).slice(1).toLowerCase();
+    const mime = MIME_MAP[ext] ?? "application/octet-stream";
+    res.setHeader("Content-Type", mime);
+    res.setHeader("Content-Length", stat.size);
+    res.setHeader("Accept-Ranges", "bytes");
+    createReadStream(filePath).pipe(res);
+  } catch (err: any) {
+    res.status(404).json({ error: err?.message ?? "File not found" });
   }
 });
 

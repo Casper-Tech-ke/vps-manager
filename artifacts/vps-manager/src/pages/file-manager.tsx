@@ -13,7 +13,7 @@ import {
   Folder, FileText, File as FileIcon, Image, Code2, Database,
   ChevronRight, ArrowLeft, RefreshCw, FolderPlus, FilePlus,
   Trash2, Edit2, MoveRight, X, Save, Terminal, AlertTriangle,
-  HardDrive, Home, Play, ChevronDown,
+  HardDrive, Home, Play, ChevronDown, Copy, Check, Eraser,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -89,6 +89,7 @@ export default function FileManager() {
   const [termCmd, setTermCmd] = useState("");
   const [termHistory, setTermHistory] = useState<{ cmd: string; stdout: string; stderr: string; code: number }[]>([]);
   const termRef = useRef<HTMLDivElement>(null);
+  const [copiedIdx, setCopiedIdx] = useState<number | "all" | null>(null);
 
   const qc = useQueryClient();
   const { toast } = useToast();
@@ -237,6 +238,23 @@ export default function FileManager() {
     if (!termCmd.trim() || execMut.isPending) return;
     execMut.mutate({ data: { command: termCmd, cwd: currentPath !== "/" ? currentPath : null } });
   };
+
+  const copyText = (text: string, id: number | "all") => {
+    navigator.clipboard.writeText(text).then(() => {
+      setCopiedIdx(id);
+      setTimeout(() => setCopiedIdx(null), 2000);
+    });
+  };
+
+  const buildBlockText = (entry: typeof termHistory[0]) => {
+    let out = `$ ${entry.cmd}\n`;
+    if (entry.stdout) out += entry.stdout;
+    if (entry.stderr) out += entry.stderr;
+    return out.trimEnd();
+  };
+
+  const buildAllText = () =>
+    termHistory.map(buildBlockText).join("\n\n");
 
   // ── Computed ──────────────────────────────────────────────────────────────
 
@@ -596,20 +614,57 @@ export default function FileManager() {
       <Dialog open={dialogMode === "terminal"} onOpenChange={(open) => !open && setDialogMode(null)}>
         <DialogContent className="sm:max-w-2xl h-[70vh] flex flex-col p-0 gap-0">
           <DialogHeader className="px-4 py-3 border-b border-border flex-shrink-0">
-            <DialogTitle className="font-mono flex items-center gap-2 text-sm">
-              <Terminal className="w-4 h-4 text-primary" /> Terminal
-              <span className="text-muted-foreground font-normal text-xs ml-2">{currentPath}</span>
-            </DialogTitle>
+            <div className="flex items-center justify-between gap-3">
+              <DialogTitle className="font-mono flex items-center gap-2 text-sm">
+                <Terminal className="w-4 h-4 text-primary" /> Terminal
+                <span className="text-muted-foreground font-normal text-xs ml-1">{currentPath}</span>
+              </DialogTitle>
+              <div className="flex items-center gap-1">
+                {termHistory.length > 0 && (
+                  <>
+                    <Button
+                      variant="ghost" size="sm"
+                      className="h-7 px-2 font-mono text-xs text-muted-foreground hover:text-foreground gap-1.5"
+                      onClick={() => copyText(buildAllText(), "all")}
+                      title="Copy all output"
+                    >
+                      {copiedIdx === "all"
+                        ? <><Check className="w-3.5 h-3.5 text-green-400" /> Copied</>
+                        : <><Copy className="w-3.5 h-3.5" /> Copy all</>}
+                    </Button>
+                    <Button
+                      variant="ghost" size="icon"
+                      className="h-7 w-7 text-muted-foreground hover:text-destructive"
+                      onClick={() => setTermHistory([])}
+                      title="Clear terminal"
+                    >
+                      <Eraser className="w-3.5 h-3.5" />
+                    </Button>
+                  </>
+                )}
+              </div>
+            </div>
           </DialogHeader>
           <div ref={termRef} className="flex-1 overflow-y-auto bg-black p-4 font-mono text-xs leading-relaxed">
             {termHistory.length === 0 && (
               <div className="text-muted-foreground/40 italic">Type a command below…</div>
             )}
             {termHistory.map((entry, i) => (
-              <div key={i} className="mb-3">
-                <div className="text-primary/70">$ {entry.cmd}</div>
-                {entry.stdout && <pre className="text-green-300/80 whitespace-pre-wrap break-all">{entry.stdout}</pre>}
-                {entry.stderr && <pre className="text-red-400/80 whitespace-pre-wrap break-all">{entry.stderr}</pre>}
+              <div key={i} className="mb-4 group relative">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="text-primary/70 flex-1">$ {entry.cmd}</div>
+                  <button
+                    className="opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0 text-muted-foreground hover:text-foreground p-0.5 rounded"
+                    onClick={() => copyText(buildBlockText(entry), i)}
+                    title="Copy this output"
+                  >
+                    {copiedIdx === i
+                      ? <Check className="w-3 h-3 text-green-400" />
+                      : <Copy className="w-3 h-3" />}
+                  </button>
+                </div>
+                {entry.stdout && <pre className="text-green-300/80 whitespace-pre-wrap break-all mt-0.5">{entry.stdout}</pre>}
+                {entry.stderr && <pre className="text-red-400/80 whitespace-pre-wrap break-all mt-0.5">{entry.stderr}</pre>}
                 {entry.code !== 0 && <div className="text-red-500/60 text-[10px] mt-0.5">exit: {entry.code}</div>}
               </div>
             ))}

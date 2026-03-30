@@ -14,6 +14,7 @@ import {
   ChevronRight, ArrowLeft, RefreshCw, FolderPlus, FilePlus,
   Trash2, Edit2, MoveRight, X, Save, Terminal, AlertTriangle,
   HardDrive, Home, Play, ChevronDown, Copy, Check, Eraser,
+  PanelLeft, FolderOpen,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -29,13 +30,16 @@ import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem,
   DropdownMenuSeparator, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  Sheet, SheetContent, SheetHeader, SheetTitle,
+} from "@/components/ui/sheet";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
 import { useQueryClient } from "@tanstack/react-query";
 import { Badge } from "@/components/ui/badge";
 
-// ── Helpers ─────────────────────────────────────────────────────────────────
+// ── Helpers ──────────────────────────────────────────────────────────────────
 
 function formatSize(bytes: number | null | undefined): string {
   if (bytes == null) return "—";
@@ -48,9 +52,7 @@ function formatSize(bytes: number | null | undefined): string {
 function formatDate(iso: string): string {
   try {
     return new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
-  } catch {
-    return "";
-  }
+  } catch { return ""; }
 }
 
 type FileType = "directory" | "file" | "symlink" | "other";
@@ -62,16 +64,17 @@ function EntryIcon({ name, type, size = 18 }: { name: string; type: FileType; si
   const ext = name.split(".").pop()?.toLowerCase() ?? "";
   if (["db", "sqlite", "sqlite3"].includes(ext)) return <Database style={s} className="text-orange-400" />;
   if (["png", "jpg", "jpeg", "gif", "svg", "ico", "webp", "bmp"].includes(ext)) return <Image style={s} className="text-purple-400" />;
-  if (["js", "ts", "tsx", "jsx", "py", "sh", "bash", "rb", "go", "rs", "c", "cpp", "h", "java", "php", "sql", "yaml", "yml", "json", "toml", "ini", "conf", "env", "xml", "html", "css", "scss", "md", "txt", "log"].includes(ext)) return <Code2 style={s} className="text-blue-400" />;
+  if (["js", "ts", "tsx", "jsx", "py", "sh", "bash", "rb", "go", "rs", "c", "cpp", "h", "java", "php", "sql", "yaml", "yml", "json", "toml", "ini", "conf", "env", "xml", "html", "css", "scss", "md", "txt", "log"].includes(ext))
+    return <Code2 style={s} className="text-blue-400" />;
   return <FileIcon style={s} className="text-muted-foreground" />;
 }
 
-type DialogMode = "mkdir" | "newfile" | "rename" | "move" | "terminal";
+type DialogMode = "mkdir" | "newfile" | "rename" | "move";
 
 const stripAnsi = (str: string) =>
   str.replace(/\x1B\[[0-9;]*[a-zA-Z]|\x1B\][^\x07\x1B]*(?:\x07|\x1B\\)|\x1B[A-Z\\[\]^_]|\r/g, "");
 
-// ── Component ────────────────────────────────────────────────────────────────
+// ── Component ─────────────────────────────────────────────────────────────────
 
 export default function FileManager() {
   const searchString = useSearch();
@@ -79,19 +82,26 @@ export default function FileManager() {
   const searchParams = new URLSearchParams(searchString);
   const currentPath = searchParams.get("path") || "/";
 
+  // Right panel: "file" | "terminal" | null
+  const [rightPanel, setRightPanel] = useState<"file" | "terminal" | null>(null);
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
   const [fileContent, setFileContent] = useState<string>("");
   const [isEditing, setIsEditing] = useState(false);
 
+  // File list drawer (visible when right panel is active)
+  const [drawerOpen, setDrawerOpen] = useState(false);
+
+  // Dialogs (mkdir / newfile / rename / move)
   const [dialogMode, setDialogMode] = useState<DialogMode | null>(null);
   const [dialogInput, setDialogInput] = useState("");
   const [actionTarget, setActionTarget] = useState<{ path: string; type: FileType } | null>(null);
-
   const [deleteTarget, setDeleteTarget] = useState<{ path: string; type: FileType } | null>(null);
 
+  // Terminal
   const [termCmd, setTermCmd] = useState("");
   const [termHistory, setTermHistory] = useState<{ cmd: string; stdout: string; stderr: string; code: number }[]>([]);
   const termRef = useRef<HTMLDivElement>(null);
+  const termInputRef = useRef<HTMLInputElement>(null);
   const [copiedIdx, setCopiedIdx] = useState<number | "all" | null>(null);
 
   const qc = useQueryClient();
@@ -106,29 +116,29 @@ export default function FileManager() {
 
   const { data: fileData, isLoading: fileLoading } = useReadFile(
     { path: selectedFile! },
-    {
-      query: {
-        enabled: !!selectedFile,
-        queryKey: getReadFileQueryKey({ path: selectedFile! }),
-      },
-    }
+    { query: { enabled: !!selectedFile, queryKey: getReadFileQueryKey({ path: selectedFile! }) } }
   );
 
   useEffect(() => {
-    if (fileData) {
-      setFileContent(fileData.content);
-      setIsEditing(false);
-    }
+    if (fileData) { setFileContent(fileData.content); setIsEditing(false); }
   }, [fileData]);
 
   useEffect(() => {
     setSelectedFile(null);
+    setRightPanel(null);
     setIsEditing(false);
   }, [currentPath]);
 
   useEffect(() => {
     if (termRef.current) termRef.current.scrollTop = termRef.current.scrollHeight;
   }, [termHistory]);
+
+  // Focus terminal input when panel opens
+  useEffect(() => {
+    if (rightPanel === "terminal") {
+      setTimeout(() => termInputRef.current?.focus(), 50);
+    }
+  }, [rightPanel]);
 
   // ── Mutations ─────────────────────────────────────────────────────────────
 
@@ -149,7 +159,7 @@ export default function FileManager() {
       onSuccess: () => {
         toast({ title: "Deleted" });
         setDeleteTarget(null);
-        if (selectedFile) setSelectedFile(null);
+        if (rightPanel === "file") { setRightPanel(null); setSelectedFile(null); }
         qc.invalidateQueries({ queryKey: getListFilesQueryKey({ path: currentPath }) });
       },
       onError: (e: any) => toast({ title: "Delete failed", description: e?.error, variant: "destructive" }),
@@ -173,7 +183,7 @@ export default function FileManager() {
         toast({ title: "File created" });
         setDialogMode(null);
         qc.invalidateQueries({ queryKey: getListFilesQueryKey({ path: currentPath }) });
-        setSelectedFile(vars.data.path);
+        openFile(vars.data.path);
       },
       onError: (e: any) => toast({ title: "Failed", description: e?.error, variant: "destructive" }),
     },
@@ -184,7 +194,7 @@ export default function FileManager() {
       onSuccess: () => {
         toast({ title: dialogMode === "move" ? "Moved" : "Renamed" });
         setDialogMode(null);
-        setSelectedFile(null);
+        if (rightPanel === "file") { setRightPanel(null); setSelectedFile(null); }
         qc.invalidateQueries({ queryKey: getListFilesQueryKey({ path: currentPath }) });
       },
       onError: (e: any) => toast({ title: "Failed", description: e?.error, variant: "destructive" }),
@@ -194,15 +204,12 @@ export default function FileManager() {
   const execMut = useExecCommand({
     mutation: {
       onSuccess: (result) => {
-        setTermHistory((prev) => [
-          ...prev,
-          {
-            cmd: termCmd,
-            stdout: stripAnsi(result.stdout),
-            stderr: stripAnsi(result.stderr),
-            code: result.exitCode,
-          },
-        ]);
+        setTermHistory((prev) => [...prev, {
+          cmd: termCmd,
+          stdout: stripAnsi(result.stdout),
+          stderr: stripAnsi(result.stderr),
+          code: result.exitCode,
+        }]);
         setTermCmd("");
       },
       onError: (e: any) => toast({ title: "Exec failed", description: e?.error, variant: "destructive" }),
@@ -213,30 +220,41 @@ export default function FileManager() {
 
   const goTo = (p: string) => navigate(`/?path=${encodeURIComponent(p)}`);
 
+  const openFile = (path: string) => {
+    setSelectedFile(path);
+    setRightPanel("file");
+    setDrawerOpen(false);
+  };
+
+  const openTerminal = () => {
+    setRightPanel("terminal");
+    setDrawerOpen(false);
+  };
+
+  const closeRightPanel = () => {
+    setRightPanel(null);
+    setSelectedFile(null);
+    setIsEditing(false);
+  };
+
   const openDialog = (mode: DialogMode, item?: { path: string; type: FileType }) => {
     setDialogMode(mode);
     setActionTarget(item ?? null);
-    if (mode === "rename" && item) {
-      setDialogInput(item.path.split("/").pop() ?? "");
-    } else if (mode === "move" && item) {
-      setDialogInput(item.path);
-    } else {
-      setDialogInput("");
-    }
+    setDialogInput(
+      mode === "rename" && item ? (item.path.split("/").pop() ?? "") :
+      mode === "move" && item ? item.path : ""
+    );
   };
 
   const submitDialog = () => {
     if (!dialogInput.trim()) return;
     if (dialogMode === "mkdir") {
-      const p = currentPath === "/" ? `/${dialogInput}` : `${currentPath}/${dialogInput}`;
-      mkdirMut.mutate({ data: { path: p } });
+      mkdirMut.mutate({ data: { path: currentPath === "/" ? `/${dialogInput}` : `${currentPath}/${dialogInput}` } });
     } else if (dialogMode === "newfile") {
-      const p = currentPath === "/" ? `/${dialogInput}` : `${currentPath}/${dialogInput}`;
-      newFileMut.mutate({ data: { path: p, content: "" } });
+      newFileMut.mutate({ data: { path: currentPath === "/" ? `/${dialogInput}` : `${currentPath}/${dialogInput}`, content: "" } });
     } else if (dialogMode === "rename" && actionTarget) {
       const parent = actionTarget.path.substring(0, actionTarget.path.lastIndexOf("/")) || "";
-      const newPath = (parent === "" ? "" : parent) + "/" + dialogInput;
-      renameMut.mutate({ data: { oldPath: actionTarget.path, newPath } });
+      renameMut.mutate({ data: { oldPath: actionTarget.path, newPath: `${parent}/${dialogInput}` } });
     } else if (dialogMode === "move" && actionTarget) {
       renameMut.mutate({ data: { oldPath: actionTarget.path, newPath: dialogInput } });
     }
@@ -245,11 +263,7 @@ export default function FileManager() {
   const runCommand = () => {
     const cmd = termCmd.trim();
     if (!cmd || execMut.isPending) return;
-    if (cmd === "clear") {
-      setTermHistory([]);
-      setTermCmd("");
-      return;
-    }
+    if (cmd === "clear") { setTermHistory([]); setTermCmd(""); return; }
     execMut.mutate({ data: { command: cmd, cwd: currentPath !== "/" ? currentPath : null } });
   };
 
@@ -260,32 +274,140 @@ export default function FileManager() {
     });
   };
 
-  const buildBlockText = (entry: typeof termHistory[0]) => {
-    let out = `$ ${entry.cmd}\n`;
-    if (entry.stdout) out += entry.stdout;
-    if (entry.stderr) out += entry.stderr;
-    return out.trimEnd();
-  };
+  const buildBlockText = (e: typeof termHistory[0]) =>
+    `$ ${e.cmd}\n${e.stdout}${e.stderr}`.trimEnd();
 
-  const buildAllText = () =>
-    termHistory.map(buildBlockText).join("\n\n");
+  const buildAllText = () => termHistory.map(buildBlockText).join("\n\n");
 
   // ── Computed ──────────────────────────────────────────────────────────────
 
   const crumbs = currentPath.split("/").filter(Boolean);
-  const isPending = mkdirMut.isPending || newFileMut.isPending || renameMut.isPending || writeMut.isPending;
+  const isPending = mkdirMut.isPending || newFileMut.isPending || renameMut.isPending;
+  const rightPanelOpen = rightPanel !== null;
+
+  // ── File list (reused in main view + drawer) ──────────────────────────────
+
+  const FileList = ({ onNavigate }: { onNavigate?: () => void }) => (
+    <ScrollArea className="flex-1">
+      {isLoading ? (
+        <div className="p-3 space-y-1">
+          {Array.from({ length: 8 }).map((_, i) => <Skeleton key={i} className="h-11 w-full rounded-md" />)}
+        </div>
+      ) : listError ? (
+        <div className="flex flex-col items-center justify-center h-48 gap-3 text-muted-foreground p-4">
+          <AlertTriangle className="w-8 h-8 text-destructive/60" />
+          <p className="font-mono text-sm">Cannot read directory</p>
+          <Button variant="outline" size="sm" onClick={() => refetch()}>Retry</Button>
+        </div>
+      ) : (
+        <div>
+          {listing?.parentPath != null && (
+            <div
+              className="flex items-center gap-3 px-4 py-3 hover:bg-accent/40 cursor-pointer border-b border-border/30 transition-colors"
+              onClick={() => { goTo(listing.parentPath!); onNavigate?.(); }}
+            >
+              <ArrowLeft className="w-4 h-4 text-muted-foreground flex-shrink-0" />
+              <span className="font-mono text-sm text-muted-foreground">..</span>
+            </div>
+          )}
+          {listing?.entries.length === 0 && (
+            <div className="flex flex-col items-center justify-center h-40 text-muted-foreground gap-2">
+              <Folder className="w-9 h-9 opacity-20" />
+              <p className="text-sm font-mono opacity-50">Empty folder</p>
+            </div>
+          )}
+          {listing?.entries.map((entry) => {
+            const isSelected = selectedFile === entry.path;
+            const entryType = entry.type as FileType;
+            return (
+              <div
+                key={entry.path}
+                className={`group relative flex items-center gap-3 px-4 py-3 border-b border-border/30 cursor-pointer transition-colors select-none ${
+                  isSelected ? "bg-primary/10 border-l-2 border-l-primary" : "hover:bg-accent/40"
+                }`}
+                onClick={() => {
+                  if (entry.type === "directory") { goTo(entry.path); onNavigate?.(); }
+                  else { openFile(entry.path); }
+                }}
+              >
+                <EntryIcon name={entry.name} type={entryType} size={19} />
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className="font-mono text-sm truncate" title={entry.name}>{entry.name}</span>
+                    {entry.type === "symlink" && (
+                      <Badge variant="outline" className="text-[10px] px-1 h-4 py-0 font-mono flex-shrink-0">link</Badge>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-3 mt-0.5 text-xs text-muted-foreground/60">
+                    {entry.type !== "directory" && <span className="font-mono">{formatSize(entry.size)}</span>}
+                    <span>{formatDate(entry.modifiedAt)}</span>
+                  </div>
+                </div>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      variant="ghost" size="icon"
+                      className="h-8 w-8 opacity-0 group-hover:opacity-100 flex-shrink-0"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <ChevronDown className="w-4 h-4" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    {entry.type !== "directory" && (
+                      <DropdownMenuItem onClick={(e) => { e.stopPropagation(); openFile(entry.path); }}>
+                        <FileText className="w-4 h-4 mr-2" /> Open
+                      </DropdownMenuItem>
+                    )}
+                    <DropdownMenuItem onClick={(e) => { e.stopPropagation(); openDialog("rename", { path: entry.path, type: entryType }); }}>
+                      <Edit2 className="w-4 h-4 mr-2" /> Rename
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={(e) => { e.stopPropagation(); openDialog("move", { path: entry.path, type: entryType }); }}>
+                      <MoveRight className="w-4 h-4 mr-2" /> Move
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem
+                      className="text-destructive focus:text-destructive"
+                      onClick={(e) => { e.stopPropagation(); setDeleteTarget({ path: entry.path, type: entryType }); }}
+                    >
+                      <Trash2 className="w-4 h-4 mr-2" /> Delete
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </ScrollArea>
+  );
 
   // ── Render ────────────────────────────────────────────────────────────────
   return (
     <div className="flex flex-col h-screen bg-background text-foreground overflow-hidden">
 
-      {/* Top bar */}
+      {/* ── Top bar ── */}
       <header className="flex-shrink-0 h-14 bg-card border-b border-border flex items-center gap-2 px-3">
-        <div className="flex items-center gap-2 mr-1">
+
+        {/* Logo */}
+        <div className="flex items-center gap-2 flex-shrink-0">
           <HardDrive className="w-5 h-5 text-primary" />
           <span className="font-mono font-bold text-sm text-primary hidden sm:block">FileMgr</span>
         </div>
-        <div className="w-px h-5 bg-border mx-1" />
+
+        {/* File list toggle — shown when right panel is active */}
+        {rightPanelOpen && (
+          <Button
+            variant="ghost" size="icon"
+            className="h-8 w-8 flex-shrink-0 text-muted-foreground hover:text-foreground"
+            onClick={() => setDrawerOpen(true)}
+            title="Browse files"
+          >
+            <PanelLeft className="w-4 h-4" />
+          </Button>
+        )}
+
+        <div className="w-px h-5 bg-border mx-0.5" />
 
         {/* Breadcrumb */}
         <div className="flex items-center gap-0.5 flex-1 min-w-0 overflow-x-auto scrollbar-none font-mono text-sm">
@@ -314,16 +436,31 @@ export default function FileManager() {
           })}
         </div>
 
-        {/* Right actions */}
+        {/* Right toolbar */}
         <div className="flex items-center gap-1 flex-shrink-0">
-          {listing?.parentPath != null && (
+          {!rightPanelOpen && listing?.parentPath != null && (
             <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => goTo(listing.parentPath!)} title="Go up">
               <ArrowLeft className="w-4 h-4" />
             </Button>
           )}
-          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => refetch()} title="Refresh">
-            <RefreshCw className="w-4 h-4" />
+          {!rightPanelOpen && (
+            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => refetch()} title="Refresh">
+              <RefreshCw className="w-4 h-4" />
+            </Button>
+          )}
+
+          {/* Terminal toggle */}
+          <Button
+            variant={rightPanel === "terminal" ? "secondary" : "ghost"}
+            size="icon"
+            className="h-8 w-8"
+            onClick={() => rightPanel === "terminal" ? closeRightPanel() : openTerminal()}
+            title="Terminal"
+          >
+            <Terminal className="w-4 h-4" />
           </Button>
+
+          {/* New dropdown */}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="default" size="sm" className="h-8 font-mono text-xs gap-1.5">
@@ -337,153 +474,35 @@ export default function FileManager() {
               <DropdownMenuItem onClick={() => openDialog("mkdir")}>
                 <FolderPlus className="w-4 h-4 mr-2" /> New Folder
               </DropdownMenuItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={() => openDialog("terminal")}>
-                <Terminal className="w-4 h-4 mr-2" /> Terminal
-              </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
       </header>
 
-      {/* Main content */}
+      {/* ── Main ── */}
       <div className="flex flex-1 min-h-0">
 
-        {/* File list */}
-        <div className={`flex flex-col min-h-0 border-r border-border transition-all ${selectedFile ? "hidden md:flex md:w-1/2" : "flex-1"}`}>
-
-          {/* Column headers (desktop) */}
-          <div className="hidden md:grid grid-cols-12 gap-2 px-4 py-2 bg-muted/20 border-b border-border font-mono text-xs text-muted-foreground font-medium flex-shrink-0 select-none">
-            <div className="col-span-6">Name</div>
-            <div className="col-span-3 text-right">Size</div>
-            <div className="col-span-3 text-right">Modified</div>
+        {/* File list — full width when no right panel */}
+        {!rightPanelOpen && (
+          <div className="flex flex-col flex-1 min-h-0">
+            {/* Column headers */}
+            <div className="grid grid-cols-12 gap-2 px-4 py-2 bg-muted/20 border-b border-border font-mono text-xs text-muted-foreground font-medium flex-shrink-0 select-none">
+              <div className="col-span-7">Name</div>
+              <div className="col-span-2 text-right hidden sm:block">Size</div>
+              <div className="col-span-3 text-right hidden sm:block">Modified</div>
+            </div>
+            <FileList />
+            <div className="h-7 border-t border-border bg-card/20 flex items-center px-4 flex-shrink-0">
+              <span className="font-mono text-xs text-muted-foreground/50">{listing?.entries.length ?? 0} items</span>
+            </div>
           </div>
+        )}
 
-          <ScrollArea className="flex-1">
-            {isLoading ? (
-              <div className="p-3 space-y-1">
-                {Array.from({ length: 10 }).map((_, i) => (
-                  <Skeleton key={i} className="h-12 w-full rounded-md" />
-                ))}
-              </div>
-            ) : listError ? (
-              <div className="flex flex-col items-center justify-center h-64 gap-4 text-muted-foreground p-6">
-                <AlertTriangle className="w-10 h-10 text-destructive/60" />
-                <p className="font-mono text-sm text-center">Cannot read this directory</p>
-                <Button variant="outline" size="sm" onClick={() => refetch()}>Retry</Button>
-              </div>
-            ) : (
-              <div>
-                {listing?.parentPath != null && (
-                  <div
-                    className="flex items-center gap-3 px-4 py-3.5 hover:bg-accent/40 cursor-pointer border-b border-border/30 transition-colors"
-                    onClick={() => goTo(listing.parentPath!)}
-                  >
-                    <ArrowLeft className="w-4 h-4 text-muted-foreground flex-shrink-0" />
-                    <span className="font-mono text-sm text-muted-foreground">..</span>
-                  </div>
-                )}
-
-                {listing?.entries.length === 0 && (
-                  <div className="flex flex-col items-center justify-center h-52 text-muted-foreground gap-3">
-                    <Folder className="w-10 h-10 opacity-20" />
-                    <p className="text-sm font-mono opacity-50">Empty folder</p>
-                  </div>
-                )}
-
-                {listing?.entries.map((entry) => {
-                  const isSelected = selectedFile === entry.path;
-                  const entryType = entry.type as FileType;
-                  return (
-                    <div
-                      key={entry.path}
-                      className={`group relative flex items-center gap-3 px-4 py-3 border-b border-border/30 cursor-pointer transition-colors select-none ${
-                        isSelected ? "bg-primary/10 border-l-2 border-l-primary" : "hover:bg-accent/40"
-                      }`}
-                      onClick={() => {
-                        if (entry.type === "directory") goTo(entry.path);
-                        else setSelectedFile(entry.path);
-                      }}
-                    >
-                      <EntryIcon name={entry.name} type={entryType} size={20} />
-
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2">
-                          <span className="font-mono text-sm truncate" title={entry.name}>{entry.name}</span>
-                          {entry.type === "symlink" && (
-                            <Badge variant="outline" className="text-[10px] px-1 h-4 py-0 font-mono flex-shrink-0">link</Badge>
-                          )}
-                        </div>
-                        <div className="flex items-center gap-3 mt-0.5 md:hidden">
-                          <span className="text-xs text-muted-foreground font-mono">
-                            {entry.type !== "directory" ? formatSize(entry.size) : ""}
-                          </span>
-                          <span className="text-xs text-muted-foreground/60">{formatDate(entry.modifiedAt)}</span>
-                        </div>
-                      </div>
-
-                      {/* Desktop size/date */}
-                      <div className="hidden md:flex items-center gap-2 flex-shrink-0 w-48 justify-end">
-                        <span className="text-xs text-muted-foreground font-mono w-20 text-right">
-                          {entry.type !== "directory" ? formatSize(entry.size) : ""}
-                        </span>
-                        <span className="text-xs text-muted-foreground/60 w-24 text-right">{formatDate(entry.modifiedAt)}</span>
-                      </div>
-
-                      {/* Context menu */}
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button
-                            variant="ghost" size="icon"
-                            className="h-8 w-8 opacity-0 group-hover:opacity-100 flex-shrink-0"
-                            onClick={(e) => e.stopPropagation()}
-                          >
-                            <ChevronDown className="w-4 h-4" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          {entry.type !== "directory" && (
-                            <DropdownMenuItem onClick={(e) => { e.stopPropagation(); setSelectedFile(entry.path); }}>
-                              <FileText className="w-4 h-4 mr-2" /> Open
-                            </DropdownMenuItem>
-                          )}
-                          <DropdownMenuItem onClick={(e) => { e.stopPropagation(); openDialog("rename", { path: entry.path, type: entryType }); }}>
-                            <Edit2 className="w-4 h-4 mr-2" /> Rename
-                          </DropdownMenuItem>
-                          <DropdownMenuItem onClick={(e) => { e.stopPropagation(); openDialog("move", { path: entry.path, type: entryType }); }}>
-                            <MoveRight className="w-4 h-4 mr-2" /> Move
-                          </DropdownMenuItem>
-                          <DropdownMenuSeparator />
-                          <DropdownMenuItem
-                            className="text-destructive focus:text-destructive"
-                            onClick={(e) => { e.stopPropagation(); setDeleteTarget({ path: entry.path, type: entryType }); }}
-                          >
-                            <Trash2 className="w-4 h-4 mr-2" /> Delete
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </ScrollArea>
-
-          <div className="h-7 border-t border-border bg-card/20 flex items-center px-4 flex-shrink-0">
-            <span className="font-mono text-xs text-muted-foreground/50">
-              {listing?.entries.length ?? 0} items
-            </span>
-          </div>
-        </div>
-
-        {/* File viewer / editor */}
-        {selectedFile && (
+        {/* ── File viewer / editor ── */}
+        {rightPanel === "file" && selectedFile && (
           <div className="flex-1 flex flex-col min-h-0 bg-[#09090b]">
             <div className="h-12 border-b border-border bg-card/40 flex items-center justify-between px-4 flex-shrink-0 gap-3">
               <div className="flex items-center gap-2 min-w-0">
-                <Button variant="ghost" size="icon" className="h-7 w-7 md:hidden" onClick={() => setSelectedFile(null)}>
-                  <ArrowLeft className="w-4 h-4" />
-                </Button>
                 <Code2 className="w-4 h-4 text-primary flex-shrink-0" />
                 <span className="font-mono text-sm truncate text-primary" title={selectedFile}>
                   {selectedFile.split("/").pop()}
@@ -500,7 +519,7 @@ export default function FileManager() {
                     </Button>
                     <Button
                       size="sm" className="h-7 font-mono text-xs"
-                      onClick={() => selectedFile && writeMut.mutate({ data: { path: selectedFile, content: fileContent } })}
+                      onClick={() => writeMut.mutate({ data: { path: selectedFile, content: fileContent } })}
                       disabled={writeMut.isPending}
                     >
                       <Save className="w-3 h-3 mr-1.5" />
@@ -514,7 +533,7 @@ export default function FileManager() {
                         <Edit2 className="w-3 h-3 mr-1.5" /> Edit
                       </Button>
                     )}
-                    <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hidden md:flex" onClick={() => setSelectedFile(null)}>
+                    <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground" onClick={closeRightPanel}>
                       <X className="w-3.5 h-3.5" />
                     </Button>
                   </>
@@ -551,10 +570,110 @@ export default function FileManager() {
             </div>
           </div>
         )}
+
+        {/* ── Terminal (inline panel) ── */}
+        {rightPanel === "terminal" && (
+          <div className="flex-1 flex flex-col min-h-0">
+            {/* Terminal header */}
+            <div className="h-12 border-b border-border bg-card/40 flex items-center justify-between px-4 flex-shrink-0 gap-3">
+              <div className="flex items-center gap-2">
+                <Terminal className="w-4 h-4 text-primary" />
+                <span className="font-mono text-sm text-primary">Terminal</span>
+                <span className="font-mono text-xs text-muted-foreground/60 ml-1 hidden sm:block">{currentPath}</span>
+              </div>
+              <div className="flex items-center gap-1">
+                {termHistory.length > 0 && (
+                  <>
+                    <Button
+                      variant="ghost" size="sm"
+                      className="h-7 px-2 font-mono text-xs text-muted-foreground hover:text-foreground gap-1.5"
+                      onClick={() => copyText(buildAllText(), "all")}
+                    >
+                      {copiedIdx === "all"
+                        ? <><Check className="w-3.5 h-3.5 text-green-400" /> Copied</>
+                        : <><Copy className="w-3.5 h-3.5" /> Copy all</>}
+                    </Button>
+                    <Button
+                      variant="ghost" size="icon"
+                      className="h-7 w-7 text-muted-foreground hover:text-destructive"
+                      onClick={() => setTermHistory([])}
+                      title="Clear"
+                    >
+                      <Eraser className="w-3.5 h-3.5" />
+                    </Button>
+                  </>
+                )}
+                <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground" onClick={closeRightPanel}>
+                  <X className="w-3.5 h-3.5" />
+                </Button>
+              </div>
+            </div>
+
+            {/* Output */}
+            <div ref={termRef} className="flex-1 overflow-y-auto bg-black p-4 font-mono text-xs leading-relaxed">
+              {termHistory.length === 0 && (
+                <div className="text-muted-foreground/30 italic">Type a command below…</div>
+              )}
+              {termHistory.map((entry, i) => (
+                <div key={i} className="mb-4 group">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="text-primary/70">$ {entry.cmd}</div>
+                    <button
+                      className="opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0 text-muted-foreground hover:text-foreground p-0.5 rounded"
+                      onClick={() => copyText(buildBlockText(entry), i)}
+                    >
+                      {copiedIdx === i ? <Check className="w-3 h-3 text-green-400" /> : <Copy className="w-3 h-3" />}
+                    </button>
+                  </div>
+                  {entry.stdout && <pre className="text-green-300/80 whitespace-pre-wrap break-all mt-0.5">{entry.stdout}</pre>}
+                  {entry.stderr && <pre className="text-red-400/80 whitespace-pre-wrap break-all mt-0.5">{entry.stderr}</pre>}
+                  {entry.code !== 0 && <div className="text-red-500/60 text-[10px] mt-0.5">exit: {entry.code}</div>}
+                </div>
+              ))}
+            </div>
+
+            {/* Input */}
+            <div className="flex items-center gap-2 px-4 py-3 border-t border-border flex-shrink-0 bg-black">
+              <span className="font-mono text-sm text-primary/60 flex-shrink-0">$</span>
+              <Input
+                ref={termInputRef}
+                value={termCmd}
+                onChange={(e) => setTermCmd(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter") runCommand(); }}
+                placeholder="command…"
+                className="flex-1 font-mono text-sm bg-transparent border-0 focus-visible:ring-0 px-0 h-8"
+              />
+              <Button size="sm" className="h-8 px-3 flex-shrink-0" onClick={runCommand} disabled={!termCmd.trim() || execMut.isPending}>
+                <Play className="w-3.5 h-3.5" />
+              </Button>
+            </div>
+          </div>
+        )}
       </div>
 
-      {/* Create / Rename / Move dialog */}
-      <Dialog open={!!dialogMode && dialogMode !== "terminal"} onOpenChange={(open) => !open && setDialogMode(null)}>
+      {/* ── File list drawer (when right panel is active) ── */}
+      <Sheet open={drawerOpen} onOpenChange={setDrawerOpen}>
+        <SheetContent side="left" className="w-80 p-0 flex flex-col">
+          <SheetHeader className="px-4 py-3 border-b border-border flex-shrink-0">
+            <SheetTitle className="font-mono flex items-center gap-2 text-sm">
+              <FolderOpen className="w-4 h-4 text-primary" />
+              {currentPath}
+            </SheetTitle>
+          </SheetHeader>
+          <div className="flex-1 min-h-0 flex flex-col">
+            <FileList onNavigate={() => setDrawerOpen(false)} />
+          </div>
+          <div className="h-7 border-t border-border bg-card/20 flex items-center justify-between px-4 flex-shrink-0">
+            <span className="font-mono text-xs text-muted-foreground/50">{listing?.entries.length ?? 0} items</span>
+            <Button variant="ghost" size="sm" className="h-6 px-2 font-mono text-xs" onClick={() => { refetch(); }}>
+              <RefreshCw className="w-3 h-3 mr-1" /> Refresh
+            </Button>
+          </div>
+        </SheetContent>
+      </Sheet>
+
+      {/* ── Create / Rename / Move dialog ── */}
+      <Dialog open={!!dialogMode} onOpenChange={(open) => !open && setDialogMode(null)}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle className="font-mono">
@@ -573,8 +692,7 @@ export default function FileManager() {
               placeholder={
                 dialogMode === "mkdir" ? "folder-name" :
                 dialogMode === "newfile" ? "filename.txt" :
-                dialogMode === "rename" ? "new-name" :
-                "/absolute/destination/path"
+                dialogMode === "rename" ? "new-name" : "/absolute/destination/path"
               }
               className="font-mono text-sm"
               autoFocus
@@ -593,7 +711,7 @@ export default function FileManager() {
         </DialogContent>
       </Dialog>
 
-      {/* Delete confirmation */}
+      {/* ── Delete confirmation ── */}
       <AlertDialog open={!!deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -623,82 +741,6 @@ export default function FileManager() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-
-      {/* Terminal */}
-      <Dialog open={dialogMode === "terminal"} onOpenChange={(open) => !open && setDialogMode(null)}>
-        <DialogContent className="sm:max-w-2xl h-[70vh] flex flex-col p-0 gap-0">
-          <DialogHeader className="px-4 py-3 border-b border-border flex-shrink-0">
-            <div className="flex items-center justify-between gap-3">
-              <DialogTitle className="font-mono flex items-center gap-2 text-sm">
-                <Terminal className="w-4 h-4 text-primary" /> Terminal
-                <span className="text-muted-foreground font-normal text-xs ml-1">{currentPath}</span>
-              </DialogTitle>
-              <div className="flex items-center gap-1">
-                {termHistory.length > 0 && (
-                  <>
-                    <Button
-                      variant="ghost" size="sm"
-                      className="h-7 px-2 font-mono text-xs text-muted-foreground hover:text-foreground gap-1.5"
-                      onClick={() => copyText(buildAllText(), "all")}
-                      title="Copy all output"
-                    >
-                      {copiedIdx === "all"
-                        ? <><Check className="w-3.5 h-3.5 text-green-400" /> Copied</>
-                        : <><Copy className="w-3.5 h-3.5" /> Copy all</>}
-                    </Button>
-                    <Button
-                      variant="ghost" size="icon"
-                      className="h-7 w-7 text-muted-foreground hover:text-destructive"
-                      onClick={() => setTermHistory([])}
-                      title="Clear terminal"
-                    >
-                      <Eraser className="w-3.5 h-3.5" />
-                    </Button>
-                  </>
-                )}
-              </div>
-            </div>
-          </DialogHeader>
-          <div ref={termRef} className="flex-1 overflow-y-auto bg-black p-4 font-mono text-xs leading-relaxed">
-            {termHistory.length === 0 && (
-              <div className="text-muted-foreground/40 italic">Type a command below…</div>
-            )}
-            {termHistory.map((entry, i) => (
-              <div key={i} className="mb-4 group relative">
-                <div className="flex items-start justify-between gap-2">
-                  <div className="text-primary/70 flex-1">$ {entry.cmd}</div>
-                  <button
-                    className="opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0 text-muted-foreground hover:text-foreground p-0.5 rounded"
-                    onClick={() => copyText(buildBlockText(entry), i)}
-                    title="Copy this output"
-                  >
-                    {copiedIdx === i
-                      ? <Check className="w-3 h-3 text-green-400" />
-                      : <Copy className="w-3 h-3" />}
-                  </button>
-                </div>
-                {entry.stdout && <pre className="text-green-300/80 whitespace-pre-wrap break-all mt-0.5">{entry.stdout}</pre>}
-                {entry.stderr && <pre className="text-red-400/80 whitespace-pre-wrap break-all mt-0.5">{entry.stderr}</pre>}
-                {entry.code !== 0 && <div className="text-red-500/60 text-[10px] mt-0.5">exit: {entry.code}</div>}
-              </div>
-            ))}
-          </div>
-          <div className="flex items-center gap-2 px-4 py-3 border-t border-border flex-shrink-0 bg-black">
-            <span className="font-mono text-sm text-primary/60">$</span>
-            <Input
-              value={termCmd}
-              onChange={(e) => setTermCmd(e.target.value)}
-              onKeyDown={(e) => { if (e.key === "Enter") runCommand(); }}
-              placeholder="command…"
-              className="flex-1 font-mono text-sm bg-transparent border-0 focus-visible:ring-0 px-0 h-8"
-              autoFocus
-            />
-            <Button size="sm" className="h-8 px-3" onClick={runCommand} disabled={!termCmd.trim() || execMut.isPending}>
-              <Play className="w-3.5 h-3.5" />
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }

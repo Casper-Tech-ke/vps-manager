@@ -99,7 +99,8 @@ export default function FileManager() {
 
   // Terminal
   const [termCmd, setTermCmd] = useState("");
-  const [termHistory, setTermHistory] = useState<{ cmd: string; stdout: string; stderr: string; code: number }[]>([]);
+  const [termCwd, setTermCwd] = useState("/");
+  const [termHistory, setTermHistory] = useState<{ cmd: string; stdout: string; stderr: string; code: number; cwd?: string }[]>([]);
   const termRef = useRef<HTMLDivElement>(null);
   const termInputRef = useRef<HTMLInputElement>(null);
   const [copiedIdx, setCopiedIdx] = useState<number | "all" | null>(null);
@@ -203,13 +204,37 @@ export default function FileManager() {
 
   const execMut = useExecCommand({
     mutation: {
-      onSuccess: (result) => {
-        setTermHistory((prev) => [...prev, {
-          cmd: termCmd,
-          stdout: stripAnsi(result.stdout),
-          stderr: stripAnsi(result.stderr),
-          code: result.exitCode,
-        }]);
+      onSuccess: (result, variables) => {
+        const sentCmd = variables.data.command ?? "";
+        const isCdProbe = /^cd\s.*&&\s*pwd$/.test(sentCmd) || sentCmd === "cd && pwd" || sentCmd === "cd ~ && pwd";
+
+        if (isCdProbe) {
+          if (result.exitCode === 0 && result.stdout.trim()) {
+            const newCwd = result.stdout.trim();
+            setTermCwd(newCwd);
+            setTermHistory((prev) => [...prev, {
+              cmd: termCmd,
+              stdout: "",
+              stderr: stripAnsi(result.stderr),
+              code: 0,
+              cwd: newCwd,
+            }]);
+          } else {
+            setTermHistory((prev) => [...prev, {
+              cmd: termCmd,
+              stdout: "",
+              stderr: stripAnsi(result.stderr) || "cd: No such file or directory",
+              code: result.exitCode,
+            }]);
+          }
+        } else {
+          setTermHistory((prev) => [...prev, {
+            cmd: termCmd,
+            stdout: stripAnsi(result.stdout),
+            stderr: stripAnsi(result.stderr),
+            code: result.exitCode,
+          }]);
+        }
         setTermCmd("");
       },
       onError: (e: any) => toast({ title: "Exec failed", description: e?.error, variant: "destructive" }),
@@ -264,7 +289,22 @@ export default function FileManager() {
     const cmd = termCmd.trim();
     if (!cmd || execMut.isPending) return;
     if (cmd === "clear") { setTermHistory([]); setTermCmd(""); return; }
-    execMut.mutate({ data: { command: cmd, cwd: currentPath !== "/" ? currentPath : null } });
+
+    // Handle cd client-side to persist working directory
+    const cdMatch = cmd.match(/^cd(?:\s+(.+))?$/);
+    if (cdMatch) {
+      const arg = (cdMatch[1] ?? "").trim();
+      // Verify the path exists by running `cd` on the server, then update state
+      execMut.mutate({
+        data: {
+          command: `cd ${arg || "~"} && pwd`,
+          cwd: termCwd,
+        },
+      });
+      return;
+    }
+
+    execMut.mutate({ data: { command: cmd, cwd: termCwd } });
   };
 
   const copyText = (text: string, id: number | "all") => {
@@ -576,10 +616,10 @@ export default function FileManager() {
           <div className="flex-1 flex flex-col min-h-0">
             {/* Terminal header */}
             <div className="h-12 border-b border-border bg-card/40 flex items-center justify-between px-4 flex-shrink-0 gap-3">
-              <div className="flex items-center gap-2">
-                <Terminal className="w-4 h-4 text-primary" />
-                <span className="font-mono text-sm text-primary">Terminal</span>
-                <span className="font-mono text-xs text-muted-foreground/60 ml-1 hidden sm:block">{currentPath}</span>
+              <div className="flex items-center gap-2 min-w-0">
+                <Terminal className="w-4 h-4 text-primary flex-shrink-0" />
+                <span className="font-mono text-sm text-primary flex-shrink-0">Terminal</span>
+                <span className="font-mono text-xs text-muted-foreground/60 ml-1 truncate">{termCwd}</span>
               </div>
               <div className="flex items-center gap-1">
                 {termHistory.length > 0 && (
@@ -617,7 +657,7 @@ export default function FileManager() {
               {termHistory.map((entry, i) => (
                 <div key={i} className="mb-4 group">
                   <div className="flex items-start justify-between gap-2">
-                    <div className="text-primary/70">$ {entry.cmd}</div>
+                    <div className="text-primary/70 font-mono">$ {entry.cmd}</div>
                     <button
                       className="opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0 text-muted-foreground hover:text-foreground p-0.5 rounded"
                       onClick={() => copyText(buildBlockText(entry), i)}
@@ -625,6 +665,9 @@ export default function FileManager() {
                       {copiedIdx === i ? <Check className="w-3 h-3 text-green-400" /> : <Copy className="w-3 h-3" />}
                     </button>
                   </div>
+                  {entry.cwd && (
+                    <div className="text-cyan-400/70 text-[11px] mt-0.5 font-mono">→ {entry.cwd}</div>
+                  )}
                   {entry.stdout && <pre className="text-green-300/80 whitespace-pre-wrap break-all mt-0.5">{entry.stdout}</pre>}
                   {entry.stderr && <pre className="text-red-400/80 whitespace-pre-wrap break-all mt-0.5">{entry.stderr}</pre>}
                   {entry.code !== 0 && <div className="text-red-500/60 text-[10px] mt-0.5">exit: {entry.code}</div>}
@@ -642,6 +685,11 @@ export default function FileManager() {
                 onKeyDown={(e) => { if (e.key === "Enter") runCommand(); }}
                 placeholder="command…"
                 className="flex-1 font-mono text-sm bg-transparent border-0 focus-visible:ring-0 px-0 h-8"
+                autoCapitalize="none"
+                autoCorrect="off"
+                autoComplete="off"
+                spellCheck={false}
+                inputMode="text"
               />
               <Button size="sm" className="h-8 px-3 flex-shrink-0" onClick={runCommand} disabled={!termCmd.trim() || execMut.isPending}>
                 <Play className="w-3.5 h-3.5" />

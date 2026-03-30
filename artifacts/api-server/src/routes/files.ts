@@ -21,7 +21,7 @@ const MIME_MAP: Record<string, string> = {
   // Fallback
   pdf: "application/pdf",
 };
-import { ListFilesQueryParams, ReadFileQueryParams, WriteFileBody, DeleteFileQueryParams, CreateDirectoryBody, RenameFileBody } from "@workspace/api-zod";
+import { ListFilesQueryParams, ReadFileQueryParams, WriteFileBody, DeleteFileQueryParams, CreateDirectoryBody, RenameFileBody, GetRawFileQueryParams } from "@workspace/api-zod";
 
 
 const router = Router();
@@ -185,16 +185,24 @@ router.post("/files/rename", async (req, res) => {
 });
 
 router.get("/files/raw", async (req, res) => {
-  const rawPath = req.query.path;
-  if (typeof rawPath !== "string" || !rawPath) {
-    return res.status(400).json({ error: "path is required" });
+  const parsed = GetRawFileQueryParams.safeParse(req.query);
+  if (!parsed.success) {
+    return res.status(400).json({ error: parsed.error.message });
   }
-  // Require an absolute path so relative / traversal inputs (e.g. ../../etc/passwd) are rejected
+  const rawPath = parsed.data.path;
+
+  // Must be an absolute path — reject relative inputs (e.g. "../../etc/passwd")
   if (!rawPath.startsWith("/")) {
     return res.status(400).json({ error: "Path must be absolute" });
   }
-  // Resolve to canonicalise any embedded '..' segments (e.g. /foo/../bar → /bar)
-  const filePath = path.resolve(rawPath);
+  // Reject any path that contains '..' segments to prevent traversal attacks
+  // (e.g. "/tmp/../../etc/shadow" has two '..' segments and must be rejected)
+  const segments = rawPath.split("/");
+  if (segments.some((seg) => seg === "..")) {
+    return res.status(400).json({ error: "Path may not contain traversal segments" });
+  }
+
+  const filePath = path.normalize(rawPath);
   try {
     const stat = await fs.stat(filePath);
     if (!stat.isFile()) {

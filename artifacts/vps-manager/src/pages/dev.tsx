@@ -1,5 +1,4 @@
 import { useEffect, useState } from "react";
-import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Github, Send, HeadphonesIcon, Coffee, Star, GitFork,
@@ -32,10 +31,22 @@ function fmtNum(n: number): string {
 function useCopyText(ms = 1500) {
   const [copied, setCopied] = useState<string | null>(null);
   function copy(text: string, id: string) {
-    navigator.clipboard.writeText(text).then(() => {
-      setCopied(id);
-      setTimeout(() => setCopied(null), ms);
-    });
+    navigator.clipboard.writeText(text).then(
+      () => {
+        setCopied(id);
+        setTimeout(() => setCopied(null), ms);
+      },
+      () => {
+        const el = document.createElement("textarea");
+        el.value = text;
+        el.style.position = "fixed";
+        el.style.opacity = "0";
+        document.body.appendChild(el);
+        el.select();
+        try { document.execCommand("copy"); setCopied(id); setTimeout(() => setCopied(null), ms); } catch (_) {}
+        document.body.removeChild(el);
+      }
+    );
   }
   return { copied, copy };
 }

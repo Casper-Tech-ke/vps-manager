@@ -699,13 +699,13 @@ export default function HomePage() {
                     </div>
 
                     {/* Path / proxy info */}
-                    {site.root && (
+                    {(site.root || site.git?.gitRoot) && (
                       <button
-                        onClick={() => navigate(`/files?path=${encodeURIComponent(site.root!)}`)}
+                        onClick={() => navigate(`/files?path=${encodeURIComponent(site.root ?? site.git!.gitRoot)}`)}
                         className="flex items-center gap-1.5 text-xs font-mono text-muted-foreground/50 hover:text-[#6e5cff] transition-colors text-left truncate w-full"
                       >
                         <FolderOpen className="w-3 h-3 flex-shrink-0" />
-                        <span className="truncate">{site.root}</span>
+                        <span className="truncate">{site.root ?? site.git!.gitRoot}</span>
                       </button>
                     )}
                     {site.proxyPass && (

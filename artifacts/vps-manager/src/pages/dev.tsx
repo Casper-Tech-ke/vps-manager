@@ -337,7 +337,7 @@ export default function DevPage() {
   }, []);
 
   return (
-    <div className="flex-1 min-h-0 overflow-y-auto" style={{ background: "#08090d" }}>
+    <div className="flex-1 overflow-y-auto" style={{ background: "#08090d" }}>
       {/* Hero */}
       <div
         className="px-6 py-10"

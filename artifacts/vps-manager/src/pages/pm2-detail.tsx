@@ -8,7 +8,7 @@ import {
   ArrowLeft, RefreshCw, RotateCcw, Square, Play, Trash2,
   CheckCircle2, XCircle, AlertCircle, FolderOpen,
   FileText, Terminal, Cpu, MemoryStick, Clock, Hash,
-  ChevronRight, Layers,
+  ChevronRight, Layers, Copy, Check,
 } from "lucide-react";
 
 interface Pm2Detail {
@@ -71,6 +71,7 @@ export default function Pm2DetailPage() {
   const [acting, setActing] = useState<string | null>(null);
   const [logTab, setLogTab] = useState<LogTab>("combined");
   const [autoRefresh, setAutoRefresh] = useState(true);
+  const [logCopied, setLogCopied] = useState(false);
   const logsEndRef = useRef<HTMLDivElement>(null);
 
   const headers = apiKey ? { Authorization: `Bearer ${apiKey}` } : {};
@@ -368,6 +369,27 @@ export default function Pm2DetailPage() {
                   )}
                 </button>
               ))}
+              {displayedLogs.length > 0 && (
+                <button
+                  onClick={() => {
+                    const text = displayedLogs.map((e) => e.line).join("\n");
+                    navigator.clipboard.writeText(text).then(() => {
+                      setLogCopied(true);
+                      setTimeout(() => setLogCopied(false), 2000);
+                    });
+                  }}
+                  className="h-6 px-2 rounded text-xs font-medium flex items-center gap-1 transition-colors ml-1"
+                  style={{
+                    background: "transparent",
+                    color: logCopied ? "#0ff4c6" : "var(--muted-foreground)",
+                    border: `1px solid ${logCopied ? "rgba(15,244,198,.3)" : "transparent"}`,
+                  }}
+                  title="Copy all logs"
+                >
+                  {logCopied ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
+                  <span>{logCopied ? "Copied" : "Copy all"}</span>
+                </button>
+              )}
             </div>
           </div>
 

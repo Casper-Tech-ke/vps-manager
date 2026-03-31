@@ -156,6 +156,7 @@ export default function FileManager({ initialPanel = null }: FileManagerProps) {
   const termRef = useRef<HTMLDivElement>(null);
   const termInputRef = useRef<HTMLInputElement>(null);
   const [copiedIdx, setCopiedIdx] = useState<number | "all" | null>(null);
+  const [copiedFile, setCopiedFile] = useState(false);
 
   const qc = useQueryClient();
   const { toast } = useToast();
@@ -368,6 +369,14 @@ export default function FileManager({ initialPanel = null }: FileManagerProps) {
     navigator.clipboard.writeText(text).then(() => {
       setCopiedIdx(id);
       setTimeout(() => setCopiedIdx(null), 2000);
+    });
+  };
+
+  const copyFileContent = () => {
+    if (!fileContent) return;
+    navigator.clipboard.writeText(fileContent).then(() => {
+      setCopiedFile(true);
+      setTimeout(() => setCopiedFile(false), 2000);
     });
   };
 
@@ -645,6 +654,18 @@ export default function FileManager({ initialPanel = null }: FileManagerProps) {
                   </>
                 ) : (
                   <>
+                    {!isMedia && !fileData?.isBinary && fileContent && (
+                      <Button
+                        variant="ghost" size="sm"
+                        className="h-7 px-2 font-mono text-xs text-muted-foreground hover:text-foreground gap-1.5"
+                        onClick={copyFileContent}
+                        title="Copy all"
+                      >
+                        {copiedFile
+                          ? <><Check className="w-3 h-3 text-green-400" /> Copied</>
+                          : <><Copy className="w-3 h-3" /> Copy all</>}
+                      </Button>
+                    )}
                     {!isMedia && !fileData?.isBinary && (
                       <Button variant="outline" size="sm" className="h-7 font-mono text-xs" onClick={() => setIsEditing(true)}>
                         <Edit2 className="w-3 h-3 mr-1.5" /> Edit

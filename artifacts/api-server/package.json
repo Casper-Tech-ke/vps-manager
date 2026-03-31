@@ -8,7 +8,16 @@
     "build": "node ./build.mjs",
     "start": "node --enable-source-maps ./dist/index.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test:raw": "node --test src/routes/files.raw.test.mjs"
+    "test:raw": "node --test src/routes/files.raw.test.mjs",
+    "pm2:start": "pm2 start ../../ecosystem.config.cjs",
+    "pm2:stop": "pm2 stop xcasper-api",
+    "pm2:restart": "pm2 restart xcasper-api",
+    "pm2:reload": "pm2 reload xcasper-api",
+    "pm2:logs": "pm2 logs xcasper-api",
+    "pm2:status": "pm2 status",
+    "pm2:delete": "pm2 delete xcasper-api",
+    "pm2:save": "pm2 save",
+    "pm2:startup": "pm2 startup"
   },
   "dependencies": {
     "@workspace/api-zod": "workspace:*",

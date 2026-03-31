@@ -6,7 +6,16 @@
     "preinstall": "sh -c 'rm -f package-lock.json yarn.lock; case \"$npm_config_user_agent\" in pnpm/*) ;; *) echo \"Use pnpm instead\" >&2; exit 1 ;; esac'",
     "build": "pnpm run typecheck && pnpm -r --if-present run build",
     "typecheck:libs": "tsc --build",
-    "typecheck": "pnpm run typecheck:libs && pnpm -r --filter \"./artifacts/**\" --filter \"./scripts\" --if-present run typecheck"
+    "typecheck": "pnpm run typecheck:libs && pnpm -r --filter \"./artifacts/**\" --filter \"./scripts\" --if-present run typecheck",
+    "pm2:start": "pnpm run build && pm2 start ecosystem.config.cjs",
+    "pm2:stop": "pm2 stop xcasper-api",
+    "pm2:restart": "pm2 restart xcasper-api",
+    "pm2:reload": "pm2 reload xcasper-api",
+    "pm2:logs": "pm2 logs xcasper-api",
+    "pm2:status": "pm2 status",
+    "pm2:delete": "pm2 delete xcasper-api",
+    "pm2:save": "pm2 save",
+    "pm2:startup": "pm2 startup"
   },
   "private": true,
   "devDependencies": {

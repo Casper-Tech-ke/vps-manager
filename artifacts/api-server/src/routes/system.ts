@@ -286,6 +286,7 @@ router.get("/system/sites", (_req, res) => {
     remote: string;
     lastCommit: string;
     dirty: boolean;
+    gitRoot: string;
   }
 
   interface SiteEntry {
@@ -335,7 +336,7 @@ router.get("/system/sites", (_req, res) => {
         lastCommit = run(`git -C "${gitRoot}" log -1 --format="%h %s" FETCH_HEAD 2>/dev/null`);
       }
       const dirty = run(`git -C "${gitRoot}" status --porcelain 2>/dev/null`).length > 0;
-      return { branch, remote, lastCommit, dirty };
+      return { branch, remote, lastCommit, dirty, gitRoot };
     } catch { return null; }
   };
 
@@ -424,6 +425,58 @@ router.get("/system/github-ssh", (_req, res) => {
       const connected = out.includes("successfully authenticated") || /^Hi .+!/.test(out);
       const authUser = out.match(/Hi (.+?)!/)?.[1] ?? null;
       res.json({ keys, connected, authUser, sshTestOutput: out });
+    }
+  );
+});
+
+router.post("/system/git-pull", (req, res) => {
+  const { dir } = req.body as { dir?: string };
+  if (!dir) return res.status(400).json({ error: "dir is required" });
+
+  // Walk up to find the git root (mirrors getGitInfo logic)
+  const findGitRoot = (startDir: string): string | null => {
+    let cur = startDir;
+    for (let i = 0; i < 8; i++) {
+      if (fs.existsSync(path.join(cur, ".git"))) return cur;
+      const parent = path.dirname(cur);
+      if (parent === cur) break;
+      cur = parent;
+    }
+    return null;
+  };
+
+  const gitRoot = findGitRoot(dir);
+  if (!gitRoot) return res.status(400).json({ error: `No git repository found at or above: ${dir}` });
+
+  // Determine default remote branch (main or master)
+  const remoteBranch = run(`git -C "${gitRoot}" ls-remote --symref origin HEAD 2>/dev/null`)
+    .match(/ref: refs\/heads\/(\S+)\s+HEAD/)?.[1] ?? "main";
+
+  // Ensure local branch exists and tracks remote
+  const localBranch = run(`git -C "${gitRoot}" rev-parse --abbrev-ref HEAD 2>/dev/null`);
+  const hasCommits = run(`git -C "${gitRoot}" rev-parse HEAD 2>/dev/null`).length > 0;
+
+  let pullCmd: string;
+  if (!hasCommits) {
+    // Fresh repo with existing files — fetch then reset hard (handles untracked files safely)
+    pullCmd = `git -C "${gitRoot}" fetch origin ${remoteBranch} 2>&1 && git -C "${gitRoot}" reset --hard origin/${remoteBranch} 2>&1`;
+  } else {
+    // Repo with commits — ensure tracking then pull
+    const trackSetup = (localBranch === "HEAD" || localBranch === "")
+      ? `git -C "${gitRoot}" checkout -B ${remoteBranch} origin/${remoteBranch} 2>&1 && `
+      : `git -C "${gitRoot}" branch --set-upstream-to=origin/${remoteBranch} ${remoteBranch} 2>/dev/null; `;
+    pullCmd = `${trackSetup}git -C "${gitRoot}" pull origin ${remoteBranch} --no-rebase 2>&1`;
+  }
+
+  exec(
+    pullCmd,
+    { timeout: 60000, encoding: "utf8" },
+    (err, stdout) => {
+      const output = stdout?.trim() ?? "";
+      if (err && !output) {
+        return res.status(500).json({ ok: false, error: err.message, output: "" });
+      }
+      res.json({ ok: !err, output, gitRoot });
     }
   );
 });

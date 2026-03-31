@@ -10,6 +10,7 @@ import {
   Server, RefreshCw, FolderOpen, Search, Trash2,
   Network, Users, Terminal, Layers, CheckCircle2, XCircle, AlertCircle,
   GitBranch, ExternalLink, ChevronRight, Globe, ShieldCheck, ShieldX, KeyRound,
+  ArrowDownToLine, Loader2,
 } from "lucide-react";
 
 interface SystemInfo {
@@ -130,7 +131,9 @@ export default function HomePage() {
   const [pm2Loading, setPm2Loading] = useState(true);
   const [gitRepos, setGitRepos] = useState<{ path: string; branch: string; remote: string; lastCommit: string; dirty: boolean }[]>([]);
   const [gitLoading, setGitLoading] = useState(true);
-  const [sitesList, setSitesList] = useState<{ name: string; domain: string; root: string | null; proxyPass: string | null; ssl: boolean; status: number | null; git: { branch: string; remote: string; lastCommit: string; dirty: boolean } | null }[]>([]);
+  const [sitesList, setSitesList] = useState<{ name: string; domain: string; root: string | null; proxyPass: string | null; ssl: boolean; status: number | null; git: { branch: string; remote: string; lastCommit: string; dirty: boolean; gitRoot: string } | null }[]>([]);
+  const [pullStates, setPullStates] = useState<Record<string, "idle" | "loading" | "ok" | "error">>({});
+  const [pullOutputs, setPullOutputs] = useState<Record<string, string>>({});
   const [sitesLoading, setSitesLoading] = useState(true);
   const [githubSsh, setGithubSsh] = useState<{ connected: boolean; authUser: string | null; keys: { type: string }[] } | null>(null);
   const [githubSshLoading, setGithubSshLoading] = useState(true);
@@ -174,11 +177,31 @@ export default function HomePage() {
     try {
       const res = await fetch("/api/system/sites", { headers: authHeaders });
       if (res.ok) {
-        const data = await res.json() as { sites: { name: string; domain: string; root: string | null; proxyPass: string | null; ssl: boolean; status: number | null; git: { branch: string; remote: string; lastCommit: string; dirty: boolean } | null }[] };
+        const data = await res.json() as { sites: { name: string; domain: string; root: string | null; proxyPass: string | null; ssl: boolean; status: number | null; git: { branch: string; remote: string; lastCommit: string; dirty: boolean; gitRoot: string } | null }[] };
         setSitesList(data.sites ?? []);
       }
     } catch { /* ignore */ }
     setSitesLoading(false);
+  }, [apiKey]);
+
+  const gitPull = useCallback(async (domain: string, dir: string) => {
+    setPullStates((prev) => ({ ...prev, [domain]: "loading" }));
+    setPullOutputs((prev) => ({ ...prev, [domain]: "" }));
+    try {
+      const res = await fetch("/api/system/git-pull", {
+        method: "POST",
+        headers: { ...authHeaders, "Content-Type": "application/json" },
+        body: JSON.stringify({ dir }),
+      });
+      const data = await res.json() as { ok: boolean; output: string; error?: string };
+      setPullStates((prev) => ({ ...prev, [domain]: data.ok ? "ok" : "error" }));
+      setPullOutputs((prev) => ({ ...prev, [domain]: data.output || data.error || "" }));
+      // Refresh site list after successful pull to update commit info
+      if (data.ok) setTimeout(() => { fetchSites(); setPullStates((prev) => ({ ...prev, [domain]: "idle" })); }, 3000);
+    } catch (e) {
+      setPullStates((prev) => ({ ...prev, [domain]: "error" }));
+      setPullOutputs((prev) => ({ ...prev, [domain]: String(e) }));
+    }
   }, [apiKey]);
 
   const fetchGithubSsh = useCallback(async () => {
@@ -698,6 +721,8 @@ export default function HomePage() {
                       const ghRepo = ghMatch ? ghMatch[1] : null;
                       const commitHash = site.git.lastCommit.split(" ")[0];
                       const commitMsg = site.git.lastCommit.split(" ").slice(1).join(" ").substring(0, 38);
+                      const pullState = pullStates[site.domain] ?? "idle";
+                      const pullOutput = pullOutputs[site.domain] ?? "";
                       return (
                         <div className="flex flex-col gap-1 pt-1 border-t border-white/5">
                           <div className="flex items-center gap-1.5">
@@ -706,24 +731,55 @@ export default function HomePage() {
                             {site.git.dirty && (
                               <span className="text-[10px] font-bold px-1 rounded" style={{ background: "rgba(245,158,11,.15)", color: "#f59e0b" }}>dirty</span>
                             )}
-                            {ghRepo && (
-                              <a
-                                href={`https://github.com/${ghRepo}`}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="ml-auto flex items-center gap-1 text-[10px] text-muted-foreground/40 hover:text-[#0ff4c6] transition-colors"
-                                onClick={(e) => e.stopPropagation()}
+                            <div className="ml-auto flex items-center gap-1.5">
+                              {ghRepo && (
+                                <a
+                                  href={`https://github.com/${ghRepo}`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="flex items-center gap-1 text-[10px] text-muted-foreground/40 hover:text-[#0ff4c6] transition-colors"
+                                  onClick={(e) => e.stopPropagation()}
+                                >
+                                  <svg className="w-3 h-3" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z" /></svg>
+                                  {ghRepo.split("/")[1]}
+                                </a>
+                              )}
+                              {/* Pull button */}
+                              <button
+                                onClick={() => gitPull(site.domain, site.git!.gitRoot)}
+                                disabled={pullState === "loading"}
+                                title="git pull"
+                                className="flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded transition-colors disabled:opacity-50"
+                                style={{
+                                  background: pullState === "ok" ? "rgba(15,244,198,.12)" : pullState === "error" ? "rgba(255,107,107,.12)" : "rgba(110,92,255,.12)",
+                                  color: pullState === "ok" ? "#0ff4c6" : pullState === "error" ? "#ff6b6b" : "#a8a0ff",
+                                  border: `1px solid ${pullState === "ok" ? "rgba(15,244,198,.2)" : pullState === "error" ? "rgba(255,107,107,.2)" : "rgba(110,92,255,.2)"}`,
+                                }}
                               >
-                                <svg className="w-3 h-3" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z" /></svg>
-                                {ghRepo.split("/")[1]}
-                              </a>
-                            )}
+                                {pullState === "loading"
+                                  ? <Loader2 className="w-2.5 h-2.5 animate-spin" />
+                                  : <ArrowDownToLine className="w-2.5 h-2.5" />}
+                                {pullState === "loading" ? "pulling…" : pullState === "ok" ? "pulled" : pullState === "error" ? "failed" : "pull"}
+                              </button>
+                            </div>
                           </div>
                           {commitHash && (
                             <div className="flex items-center gap-1.5">
                               <span className="text-[10px] font-mono px-1 rounded" style={{ background: "rgba(15,244,198,.08)", color: "#0ff4c6" }}>{commitHash}</span>
                               <span className="text-[10px] text-muted-foreground/40 truncate">{commitMsg}</span>
                             </div>
+                          )}
+                          {/* Pull output */}
+                          {pullOutput && (
+                            <pre
+                              className="text-[9px] font-mono leading-relaxed rounded p-1.5 mt-0.5 overflow-x-auto whitespace-pre-wrap"
+                              style={{
+                                background: "rgba(0,0,0,.4)",
+                                color: pullState === "error" ? "#ff9999" : "#0ff4c6",
+                                border: "1px solid rgba(255,255,255,.05)",
+                                maxHeight: "80px",
+                              }}
+                            >{pullOutput}</pre>
                           )}
                         </div>
                       );

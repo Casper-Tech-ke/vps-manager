@@ -3,7 +3,7 @@ import { useAuth } from "@/contexts/auth-context";
 import { Button } from "@/components/ui/button";
 import {
   Home, FolderOpen, Terminal, Code2,
-  Github, Send, HeadphonesIcon, LogOut, Menu, X,
+  Github, Send, HeadphonesIcon, LogOut, Menu, X, Settings,
 } from "lucide-react";
 import { useState } from "react";
 
@@ -12,6 +12,7 @@ const NAV_LINKS = [
   { href: "/files", label: "Files", icon: FolderOpen },
   { href: "/terminal", label: "Terminal", icon: Terminal },
   { href: "/dev", label: "Dev", icon: Code2 },
+  { href: "/settings", label: "Settings", icon: Settings },
 ];
 
 const SOCIAL_LINKS = [

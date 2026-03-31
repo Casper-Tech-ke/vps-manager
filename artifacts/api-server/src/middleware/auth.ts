@@ -1,7 +1,8 @@
 import type { Request, Response, NextFunction } from "express";
+import { getApiKey } from "../key-store";
 
 export function requireApiKey(req: Request, res: Response, next: NextFunction): void {
-  const apiKey = process.env.API_KEY;
+  const apiKey = getApiKey();
   if (!apiKey) {
     res.status(503).json({ error: "API_KEY not configured on server" });
     return;

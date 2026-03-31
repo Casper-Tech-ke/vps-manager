@@ -12,6 +12,7 @@ import FileManager from "@/pages/file-manager";
 import DevPage from "@/pages/dev";
 import TermsPage from "@/pages/terms";
 import Pm2DetailPage from "@/pages/pm2-detail";
+import SettingsPage from "@/pages/settings";
 import NotFound from "@/pages/not-found";
 
 const queryClient = new QueryClient({
@@ -82,6 +83,12 @@ function AppRoutes() {
       <Route path="/pm2/:name">
         <ProtectedLayout>
           <Pm2DetailPage />
+        </ProtectedLayout>
+      </Route>
+
+      <Route path="/settings">
+        <ProtectedLayout>
+          <SettingsPage />
         </ProtectedLayout>
       </Route>
 

@@ -1,9 +1,10 @@
 import { Router } from "express";
+import { getApiKey } from "../key-store";
 
 const router = Router();
 
 router.get("/auth/verify", (req, res) => {
-  const apiKey = process.env.API_KEY;
+  const apiKey = getApiKey();
   if (!apiKey) {
     return res.status(503).json({ error: "API_KEY not configured on server" });
   }

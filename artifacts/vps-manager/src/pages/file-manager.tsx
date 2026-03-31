@@ -298,7 +298,7 @@ export default function FileManager({ initialPanel = null }: FileManagerProps) {
           }
         } else {
           setTermHistory((prev) => [...prev, {
-            cmd: termCmd,
+            cmd: termCmd || sentCmd,
             stdout: stripAnsi(result.stdout),
             stderr: stripAnsi(result.stderr),
             code: result.exitCode,
@@ -402,8 +402,13 @@ export default function FileManager({ initialPanel = null }: FileManagerProps) {
   };
 
   const openTerminal = () => {
+    const cwd = currentPath;
+    setTermCwd(cwd);
     setRightPanel("terminal");
     setDrawerOpen(false);
+    setTimeout(() => {
+      execMut.mutate({ data: { command: "ls", cwd } });
+    }, 80);
   };
 
   const openLogs = () => {

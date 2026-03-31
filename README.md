@@ -12,6 +12,14 @@ No SaaS. No subscriptions. No telemetry. Deploy it on your own server, secure it
 
 ---
 
+## Screenshot
+
+![XCASPER MANAGER — System Dashboard](docs/screenshot-dashboard.png)
+
+> Screenshot placeholder — replace with an actual capture once deployed.
+
+---
+
 ## Features
 
 | Category | Capability |

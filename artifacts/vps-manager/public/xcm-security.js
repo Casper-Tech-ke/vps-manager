@@ -1,9 +1,29 @@
 ;(function (W, D, C) {
   'use strict';
 
+  /* ── anti-iframe (always active, even for the owner) ─────────── */
+  try {
+    if (W.top !== W.self) { W.top.location = W.self.location; }
+  } catch (e) {
+    W.location.href = 'about:blank';
+  }
+
+  /* ── owner bypass ────────────────────────────────────────────── */
+  /* If the API key is already in session the visitor IS the owner. */
+  /* Skip every detection check — they need DevTools to manage the  */
+  /* server. Only unauthenticated visitors get the full guard.      */
+  function isOwner() {
+    try {
+      return !!sessionStorage.getItem('xcm_api_key');
+    } catch (e) {
+      return false;
+    }
+  }
+
+  if (isOwner()) return;   /* ← owner exits here, no restrictions */
+
   /* ── state ─────────────────────────────────────────────────── */
   var _tripped  = false;
-  var _reloads  = 0;
   var _origLog  = C.log.bind(C);   // save BEFORE we noop console
 
   /* ── lockdown screen ───────────────────────────────────────── */
@@ -12,7 +32,6 @@
     _tripped = true;
 
     try {
-      // wipe DOM immediately so nothing can be inspected
       D.documentElement.innerHTML =
         '<body style="margin:0;height:100dvh;display:flex;flex-direction:column;' +
         'align-items:center;justify-content:center;background:#08090d;font-family:monospace">' +
@@ -27,17 +46,14 @@
         '</body>';
     } catch (e) {}
 
-    /* reload loop — keeps looping so the console cannot stay open */
     function loop() {
-      _reloads++;
       try { W.location.reload(true); } catch (e) {}
       setTimeout(loop, 400);
     }
     setTimeout(loop, 600);
   }
 
-  /* ── detection method 1: window size delta ─────────────────── */
-  /* Works for DevTools docked to side or bottom                  */
+  /* ── detection 1: window size delta ────────────────────────── */
   function sizeCheck() {
     return (
       W.outerWidth  - W.innerWidth  > 160 ||
@@ -45,103 +61,82 @@
     );
   }
 
-  /* ── detection method 2: console.log toString (Chrome/Edge) ── */
-  /* When the console panel is OPEN, Chrome evaluates the object  */
-  /* and calls its toString — we hook that to detect inspection   */
+  /* ── detection 2: console toString probe ───────────────────── */
   var _probe = /x/;
   _probe.toString = lockdown;
 
-  /* ── detection method 3: debugger timing ───────────────────── */
-  /* A debugger statement pauses execution when DevTools is open  */
-  /* causing measurable elapsed time vs. near-zero when closed    */
+  /* ── detection 3: debugger timing ──────────────────────────── */
   function debuggerCheck() {
-    var t = D.timeline ? 0 : +new Date();
-    /* jshint ignore:start */
-    debugger; // eslint-disable-line no-debugger
-    /* jshint ignore:end */
+    var t = +new Date();
+    /* eslint-disable no-debugger */ debugger; /* eslint-enable no-debugger */
     return +new Date() - t > 80;
   }
 
-  /* ── override console ──────────────────────────────────────── */
+  /* ── silence console ────────────────────────────────────────── */
   var _noop = function () {};
-  var _methods = [
-    'log','debug','info','warn','error','table','dir','dirxml',
-    'assert','group','groupCollapsed','groupEnd','count','countReset',
-    'clear','time','timeEnd','timeLog','timeStamp','trace',
-    'profile','profileEnd'
-  ];
-  _methods.forEach(function (m) {
+  ['log','debug','info','warn','error','table','dir','dirxml',
+   'assert','group','groupCollapsed','groupEnd','count','countReset',
+   'clear','time','timeEnd','timeLog','timeStamp','trace',
+   'profile','profileEnd'].forEach(function (m) {
     try { C[m] = _noop; } catch (e) {}
   });
 
-  /* ── periodic guard ────────────────────────────────────────── */
+  /* ── periodic guard — re-checks owner status each tick ─────── */
+  /* If the user logs in mid-session we immediately lift the guard */
   var _tick = 0;
   setInterval(function () {
+    if (isOwner()) return;   // logged in → nothing to do
     _tick++;
-
-    /* rotate checks so they don't all fire at once */
-    if (_tick % 1 === 0 && sizeCheck())      { lockdown(); return; }
-    if (_tick % 2 === 0 && debuggerCheck())  { lockdown(); return; }
-
-    /* console toString probe — use saved _origLog so Chrome evaluates it */
+    if (sizeCheck())                       { lockdown(); return; }
+    if (_tick % 2 === 0 && debuggerCheck()){ lockdown(); return; }
     _origLog(_probe);
-    try { C.clear(); } catch (e) {}   // keep native console empty
+    try { C.clear(); } catch (e) {}
   }, 1000);
 
-  /* ── block devtools keyboard shortcuts ─────────────────────── */
+  /* ── keyboard shortcuts ─────────────────────────────────────── */
   D.addEventListener('keydown', function (e) {
+    if (isOwner()) return;
     var k  = e.key  || '';
     var kU = k.toUpperCase();
     var ct = e.ctrlKey || e.metaKey;
     var sh = e.shiftKey;
-
-    /* F12 */
-    if (k === 'F12') { e.preventDefault(); e.stopPropagation(); return false; }
-
-    /* Ctrl/Cmd + Shift + I / J / C / K / M (DevTools panels) */
-    if (ct && sh && /^[IJCKM]$/.test(kU)) {
-      e.preventDefault(); e.stopPropagation(); return false;
-    }
-
-    /* Ctrl/Cmd + U (View Source) */
-    if (ct && kU === 'U') { e.preventDefault(); e.stopPropagation(); return false; }
-
-    /* Ctrl/Cmd + S (Save page as) */
-    if (ct && kU === 'S' && !sh) { e.preventDefault(); e.stopPropagation(); return false; }
-
-    /* Ctrl/Cmd + P (Print — can expose source) */
-    if (ct && kU === 'P' && !sh) { e.preventDefault(); e.stopPropagation(); return false; }
-
+    if (k === 'F12')                          { e.preventDefault(); e.stopPropagation(); }
+    if (ct && sh && /^[IJCKM]$/.test(kU))    { e.preventDefault(); e.stopPropagation(); }
+    if (ct && kU === 'U')                     { e.preventDefault(); e.stopPropagation(); }
+    if (ct && !sh && kU === 'S')              { e.preventDefault(); e.stopPropagation(); }
+    if (ct && !sh && kU === 'P')              { e.preventDefault(); e.stopPropagation(); }
   }, true);
 
-  /* ── block right-click everywhere except inputs ─────────────── */
+  /* ── right-click block ──────────────────────────────────────── */
   D.addEventListener('contextmenu', function (e) {
-    var tag = (e.target && e.target.tagName || '').toLowerCase();
-    if (tag === 'input' || tag === 'textarea') return; // allow paste menu in fields
-    e.preventDefault();
-  }, true);
-
-  /* ── block drag (prevents file drag-out extraction) ─────────── */
-  D.addEventListener('dragstart', function (e) {
+    if (isOwner()) return;
     var tag = (e.target && e.target.tagName || '').toLowerCase();
     if (tag === 'input' || tag === 'textarea') return;
     e.preventDefault();
   }, true);
 
-  /* ── prevent opening in iframe (clickjacking) ───────────────── */
-  try {
-    if (W.top !== W.self) { W.top.location = W.self.location; }
-  } catch (e) {
-    W.location.href = 'about:blank';
-  }
+  /* ── drag block ─────────────────────────────────────────────── */
+  D.addEventListener('dragstart', function (e) {
+    if (isOwner()) return;
+    var tag = (e.target && e.target.tagName || '').toLowerCase();
+    if (tag === 'input' || tag === 'textarea') return;
+    e.preventDefault();
+  }, true);
 
-  /* ── disable text selection outside editable elements ──────── */
-  /* We inject CSS rather than JS so it doesn't break inputs      */
+  /* ── disable text selection ─────────────────────────────────── */
   var _style = D.createElement('style');
+  _style.id = 'xcm-sec-style';
   _style.textContent =
     '*:not(input):not(textarea):not([contenteditable]):not([contenteditable] *)' +
     '{ -webkit-user-select:none!important; user-select:none!important; }' +
     'input,textarea,[contenteditable]{ -webkit-user-select:text!important; user-select:text!important; }';
   D.head && D.head.appendChild(_style);
+
+  /* ── lift text-selection restriction once owner logs in ─────── */
+  setInterval(function () {
+    if (!isOwner()) return;
+    var s = D.getElementById('xcm-sec-style');
+    if (s) s.remove();
+  }, 2000);
 
 }(window, document, console));

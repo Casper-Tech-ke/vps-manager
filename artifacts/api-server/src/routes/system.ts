@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { execSync, exec } from "child_process";
+import { execSync, exec, spawn } from "child_process";
 import os from "os";
 import fs from "fs";
 import path from "path";
@@ -147,6 +147,31 @@ router.get("/system/pm2", (_req, res) => {
   });
 });
 
+router.get("/system/pm2/by-cwd", (req, res) => {
+  const cwd = req.query.path as string;
+  if (!cwd) return res.status(400).json({ error: "path required" });
+  exec("pm2 jlist 2>/dev/null", (err, stdout) => {
+    if (err || !stdout.trim()) return res.json({ process: null });
+    try {
+      const raw = JSON.parse(stdout) as { name: string; pm_id: number; pm2_env?: Record<string, unknown> }[];
+      const proc = raw.find((p) => (p.pm2_env as Record<string, unknown>)?.pm_cwd === cwd);
+      if (!proc) return res.json({ process: null });
+      const env = (proc.pm2_env ?? {}) as Record<string, unknown>;
+      res.json({
+        process: {
+          name: proc.name,
+          id: proc.pm_id,
+          out: (env.pm_out_log_path as string) || null,
+          err: (env.pm_err_log_path as string) || null,
+          cwd: (env.pm_cwd as string) || null,
+        },
+      });
+    } catch {
+      res.json({ process: null });
+    }
+  });
+});
+
 router.get("/system/pm2/:name", (req, res) => {
   exec("pm2 jlist 2>/dev/null", (err, stdout) => {
     if (err || !stdout.trim()) return res.status(503).json({ error: "PM2 not available" });
@@ -206,7 +231,8 @@ router.get("/system/pm2/:name/logs", (req, res) => {
 });
 
 router.post("/system/pm2/:name/restart", (req, res) => {
-  exec(`pm2 restart "${req.params.name}" 2>&1`, { timeout: 15000 }, (err, stdout) => {
+  const name = req.params.name;
+  exec(`pm2 flush "${name}" 2>&1 && pm2 restart "${name}" 2>&1`, { timeout: 20000 }, (err, stdout) => {
     if (err) return res.status(500).json({ error: err.message, output: stdout });
     res.json({ ok: true, output: stdout.trim() });
   });
@@ -230,6 +256,92 @@ router.post("/system/pm2/:name/flush", (req, res) => {
   exec(`pm2 flush "${req.params.name}" 2>&1`, { timeout: 10000 }, (err, stdout) => {
     if (err) return res.status(500).json({ error: err.message, output: stdout });
     res.json({ ok: true, output: stdout.trim() });
+  });
+});
+
+router.post("/system/pm2/:name/rebuild-restart", (req, res) => {
+  const name = req.params.name;
+  res.setHeader("Content-Type", "text/event-stream; charset=utf-8");
+  res.setHeader("Cache-Control", "no-cache");
+  res.setHeader("Connection", "keep-alive");
+  res.setHeader("X-Accel-Buffering", "no");
+
+  const send = (event: string, data: Record<string, unknown>) => {
+    res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+    // flush if underlying socket supports it
+    if (typeof (res as unknown as { flush?: () => void }).flush === "function") {
+      (res as unknown as { flush: () => void }).flush();
+    }
+  };
+
+  exec("pm2 jlist 2>/dev/null", { timeout: 8000 }, (err, stdout) => {
+    if (err || !stdout.trim()) {
+      send("error", { message: "PM2 not available" });
+      return res.end();
+    }
+    let raw: { name: string; pm2_env?: Record<string, unknown> }[];
+    try { raw = JSON.parse(stdout); } catch {
+      send("error", { message: "Failed to parse PM2 data" });
+      return res.end();
+    }
+    const proc = raw.find((p) => p.name === name);
+    if (!proc) {
+      send("error", { message: `Process "${name}" not found` });
+      return res.end();
+    }
+    const cwd = (proc.pm2_env?.pm_cwd as string) || (proc.pm2_env?.cwd as string) || "";
+    if (!cwd) {
+      send("error", { message: "Cannot determine process working directory" });
+      return res.end();
+    }
+    const pkgPath = path.join(cwd, "package.json");
+    if (!fs.existsSync(pkgPath)) {
+      send("error", { message: `No package.json found in ${cwd}` });
+      return res.end();
+    }
+    let pkg: { scripts?: Record<string, string> };
+    try { pkg = JSON.parse(fs.readFileSync(pkgPath, "utf8")); } catch {
+      send("error", { message: "Failed to read package.json" });
+      return res.end();
+    }
+    const buildScript = pkg.scripts?.build;
+    if (!buildScript) {
+      send("error", { message: "No \"build\" script found in package.json" });
+      return res.end();
+    }
+    // Detect package manager
+    const pm = fs.existsSync(path.join(cwd, "pnpm-lock.yaml")) ? "pnpm"
+      : fs.existsSync(path.join(cwd, "yarn.lock")) ? "yarn"
+      : "npm";
+    send("info", { message: `Running ${pm} run build in ${cwd}…` });
+
+    const child = spawn("bash", ["-c", `cd "${cwd}" && ${pm} run build 2>&1`], {
+      detached: false,
+      env: { ...process.env, FORCE_COLOR: "0" },
+    });
+
+    child.stdout.on("data", (chunk: Buffer) => {
+      send("output", { text: chunk.toString() });
+    });
+    child.stderr.on("data", (chunk: Buffer) => {
+      send("output", { text: chunk.toString() });
+    });
+    child.on("close", (code) => {
+      if (code !== 0) {
+        send("error", { message: `Build exited with code ${code}` });
+        return res.end();
+      }
+      send("info", { message: "Build complete. Flushing logs and restarting…" });
+      exec(`pm2 flush "${name}" 2>&1 && pm2 restart "${name}" 2>&1`, { timeout: 20000 }, (restartErr, restartOut) => {
+        if (restartErr) {
+          send("error", { message: `Restart failed: ${restartErr.message}` });
+        } else {
+          send("done", { ok: true, output: restartOut.trim() });
+        }
+        res.end();
+      });
+    });
+    req.on("close", () => { try { child.kill(); } catch { /* ignore */ } });
   });
 });
 

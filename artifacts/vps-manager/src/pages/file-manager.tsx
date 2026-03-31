@@ -342,7 +342,7 @@ export default function FileManager({ initialPanel = null }: FileManagerProps) {
     return () => { if (logIntervalRef.current) clearInterval(logIntervalRef.current); };
   }, [logTailing, logActiveFile, rightPanel]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Discover .log files from current listing + logs/ subdirectory
+  // Discover .log files from current listing + logs/ subdirectory + PM2-managed logs
   useEffect(() => {
     if (rightPanel !== "logs") return;
 
@@ -354,37 +354,41 @@ export default function FileManager({ initialPanel = null }: FileManagerProps) {
       (e) => e.type === "directory" && e.name === "logs"
     );
 
-    if (hasLogsDir) {
-      fetch(`/api/files/list?path=${encodeURIComponent(currentPath + "/logs")}`)
+    const authToken = sessionStorage.getItem("xcm_api_key");
+    const authHeader: Record<string, string> = authToken ? { Authorization: `Bearer ${authToken}` } : {};
+
+    const fetchPm2Logs = (): Promise<string[]> =>
+      fetch(`/api/system/pm2/by-cwd?path=${encodeURIComponent(currentPath)}`, { headers: authHeader })
         .then((r) => r.ok ? r.json() : null)
-        .then((data) => {
-          const sub = (data?.entries ?? [])
-            .filter((e: { type: string; name: string }) => e.type === "file" && e.name.endsWith(".log"))
-            .map((e: { path: string }) => e.path);
-          const all = [...direct, ...sub];
-          setLogSubFiles(all);
-          if (!logActiveFile && all.length > 0) {
-            setLogActiveFile(all[0]);
-            setLogLoading(true);
-            fetchLogTail(all[0]);
-          }
+        .then((data: { process?: { out?: string | null; err?: string | null } } | null) => {
+          if (!data?.process) return [];
+          return [data.process.out, data.process.err].filter((p): p is string => !!p);
         })
-        .catch(() => {
-          setLogSubFiles(direct);
-          if (!logActiveFile && direct.length > 0) {
-            setLogActiveFile(direct[0]);
-            setLogLoading(true);
-            fetchLogTail(direct[0]);
-          }
-        });
-    } else {
-      setLogSubFiles(direct);
-      if (!logActiveFile && direct.length > 0) {
-        setLogActiveFile(direct[0]);
-        setLogLoading(true);
-        fetchLogTail(direct[0]);
+        .catch(() => []);
+
+    const fetchSubLogs = (): Promise<string[]> =>
+      hasLogsDir
+        ? fetch(`/api/files/list?path=${encodeURIComponent(currentPath + "/logs")}`)
+            .then((r) => r.ok ? r.json() : null)
+            .then((data) => (data?.entries ?? [])
+              .filter((e: { type: string; name: string }) => e.type === "file" && e.name.endsWith(".log"))
+              .map((e: { path: string }) => e.path))
+            .catch(() => [])
+        : Promise.resolve([]);
+
+    Promise.all([fetchSubLogs(), fetchPm2Logs()]).then(([sub, pm2]) => {
+      // Merge: local files first, then PM2 log files (deduped)
+      const all = [...direct, ...sub];
+      for (const p of pm2) {
+        if (!all.includes(p)) all.push(p);
       }
-    }
+      setLogSubFiles(all);
+      if (!logActiveFile && all.length > 0) {
+        setLogActiveFile(all[0]);
+        setLogLoading(true);
+        fetchLogTail(all[0]);
+      }
+    });
   }, [rightPanel, listing]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Handlers ──────────────────────────────────────────────────────────────

@@ -8,7 +8,7 @@ import {
   ArrowLeft, RefreshCw, RotateCcw, Square, Play, Trash2,
   CheckCircle2, XCircle, AlertCircle, FolderOpen,
   FileText, Terminal, Cpu, MemoryStick, Clock, Hash,
-  ChevronRight, Layers, Copy, Check,
+  ChevronRight, Layers, Copy, Check, Wrench, ChevronDown, ChevronUp,
 } from "lucide-react";
 
 interface Pm2Detail {
@@ -74,7 +74,11 @@ export default function Pm2DetailPage() {
   const [logCopied, setLogCopied] = useState(false);
   const logsEndRef = useRef<HTMLDivElement>(null);
 
-  const headers = apiKey ? { Authorization: `Bearer ${apiKey}` } : {};
+  const [buildLines, setBuildLines] = useState<{ text: string; type: "info" | "output" | "error" | "done" }[]>([]);
+  const [showBuildPanel, setShowBuildPanel] = useState(false);
+  const buildEndRef = useRef<HTMLDivElement>(null);
+
+  const headers: Record<string, string> = apiKey ? { Authorization: `Bearer ${apiKey}` } : {};
 
   const fetchProc = useCallback(async (quiet = false) => {
     if (!quiet) setLoading(true);
@@ -122,6 +126,63 @@ export default function Pm2DetailPage() {
       setTimeout(() => { fetchProc(true); fetchLogs(); }, 1200);
     } catch (e) {
       toast({ title: `${action} failed`, description: (e as Error).message, variant: "destructive" });
+    }
+    setActing(null);
+  }
+
+  async function doRebuildRestart() {
+    setActing("rebuild");
+    setBuildLines([]);
+    setShowBuildPanel(true);
+    try {
+      const res = await fetch(`/api/system/pm2/${encodeURIComponent(name)}/rebuild-restart`, {
+        method: "POST",
+        headers,
+      });
+      if (!res.body) throw new Error("No response body");
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buf = "";
+      let success = false;
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += decoder.decode(value, { stream: true });
+        const blocks = buf.split("\n\n");
+        buf = blocks.pop() ?? "";
+        for (const block of blocks) {
+          const lines = block.split("\n");
+          const eventLine = lines.find((l) => l.startsWith("event: "));
+          const dataLine = lines.find((l) => l.startsWith("data: "));
+          if (!eventLine || !dataLine) continue;
+          const event = eventLine.replace("event: ", "").trim();
+          let data: Record<string, unknown> = {};
+          try { data = JSON.parse(dataLine.replace("data: ", "")); } catch { /* skip */ }
+          if (event === "output") {
+            const text = String(data.text ?? "");
+            text.split("\n").filter(Boolean).forEach((line) =>
+              setBuildLines((prev) => [...prev, { text: line, type: "output" }])
+            );
+          } else if (event === "info") {
+            setBuildLines((prev) => [...prev, { text: String(data.message ?? ""), type: "info" }]);
+          } else if (event === "error") {
+            setBuildLines((prev) => [...prev, { text: String(data.message ?? ""), type: "error" }]);
+            toast({ title: "Rebuild failed", description: String(data.message ?? ""), variant: "destructive" });
+          } else if (event === "done") {
+            success = true;
+            setBuildLines((prev) => [...prev, { text: "✓ Rebuild & restart complete", type: "done" }]);
+          }
+        }
+        // Auto-scroll build output
+        setTimeout(() => buildEndRef.current?.scrollIntoView({ behavior: "smooth" }), 50);
+      }
+      if (success) {
+        toast({ title: "Rebuild & restart successful" });
+        setTimeout(() => { fetchProc(true); fetchLogs(); }, 1500);
+      }
+    } catch (e) {
+      toast({ title: "Rebuild failed", description: (e as Error).message, variant: "destructive" });
+      setBuildLines((prev) => [...prev, { text: (e as Error).message, type: "error" }]);
     }
     setActing(null);
   }
@@ -255,12 +316,60 @@ export default function Pm2DetailPage() {
                 <Trash2 className="w-3.5 h-3.5" />
                 {acting === "flush" ? "Flushing…" : "Flush Logs"}
               </Button>
+              <Button
+                size="sm"
+                onClick={doRebuildRestart}
+                disabled={!!acting}
+                className="h-8 gap-1.5 text-xs"
+                style={{ background: "rgba(15,244,198,.12)", color: "#0ff4c6", border: "1px solid rgba(15,244,198,.3)" }}
+              >
+                <Wrench className={`w-3.5 h-3.5 ${acting === "rebuild" ? "animate-spin" : ""}`} />
+                {acting === "rebuild" ? "Building…" : "Rebuild & Restart"}
+              </Button>
+              {buildLines.length > 0 && (
+                <button
+                  onClick={() => setShowBuildPanel((v) => !v)}
+                  className="h-8 px-2 rounded-md text-xs font-mono text-muted-foreground/60 hover:text-foreground flex items-center gap-1 transition-colors"
+                  style={{ border: "1px solid rgba(255,255,255,.08)" }}
+                >
+                  {showBuildPanel ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                  Build output
+                </button>
+              )}
             </div>
           </div>
         </div>
       </div>
 
       <div className="max-w-screen-xl mx-auto px-6 py-6 space-y-6">
+        {/* Build output panel */}
+        {showBuildPanel && buildLines.length > 0 && (
+          <div className="rounded-xl overflow-hidden" style={{ border: "1px solid rgba(15,244,198,.2)", background: "#0a0e14" }}>
+            <div className="flex items-center justify-between px-4 py-2.5" style={{ borderBottom: "1px solid rgba(15,244,198,.1)", background: "rgba(15,244,198,.04)" }}>
+              <div className="flex items-center gap-2">
+                <Wrench className="w-3.5 h-3.5" style={{ color: "#0ff4c6" }} />
+                <span className="text-xs font-mono font-bold" style={{ color: "#0ff4c6" }}>Build Output</span>
+                {acting === "rebuild" && (
+                  <span className="text-[10px] px-1.5 py-0.5 rounded animate-pulse font-medium"
+                    style={{ background: "rgba(15,244,198,.12)", color: "#0ff4c6" }}>RUNNING</span>
+                )}
+              </div>
+              <button onClick={() => setShowBuildPanel(false)} className="text-muted-foreground/40 hover:text-foreground text-xs">✕</button>
+            </div>
+            <div className="p-4 max-h-72 overflow-y-auto font-mono text-xs space-y-0.5">
+              {buildLines.map((line, i) => (
+                <div key={i} className={
+                  line.type === "error" ? "text-red-400" :
+                  line.type === "info" ? "text-[#0ff4c6]/80" :
+                  line.type === "done" ? "text-[#0ff4c6] font-bold" :
+                  "text-foreground/60"
+                }>{line.text}</div>
+              ))}
+              <div ref={buildEndRef} />
+            </div>
+          </div>
+        )}
+
         {/* Stats row */}
         {proc && (
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">

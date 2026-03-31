@@ -9,9 +9,6 @@
   }
 
   /* ── owner bypass ────────────────────────────────────────────── */
-  /* Checks BOTH localStorage (set after first successful login,    */
-  /* survives forced reloads) AND sessionStorage (current session). */
-  /* Either is enough to lift every restriction.                    */
   function isOwner() {
     try {
       return !!(
@@ -25,43 +22,6 @@
 
   if (isOwner()) return;   /* ← owner exits here, no restrictions */
 
-  /* ── state ─────────────────────────────────────────────────── */
-  var _tripped  = false;
-  var _origLog  = C.log.bind(C);   // save BEFORE we noop console
-
-  /* ── lockdown screen ───────────────────────────────────────── */
-  function lockdown() {
-    if (_tripped) return;
-    _tripped = true;
-
-    try {
-      D.documentElement.innerHTML =
-        '<body style="margin:0;height:100dvh;display:flex;flex-direction:column;' +
-        'align-items:center;justify-content:center;background:#08090d;font-family:monospace">' +
-        '<svg width="64" height="64" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">' +
-        '<rect width="64" height="64" rx="12" fill="#08090d"/>' +
-        '<line x1="14" y1="12" x2="50" y2="52" stroke="url(#g)" stroke-width="7" stroke-linecap="round"/>' +
-        '<line x1="50" y1="12" x2="14" y2="52" stroke="url(#g)" stroke-width="7" stroke-linecap="round"/>' +
-        '<defs><linearGradient id="g" x1="0" y1="0" x2="64" y2="64" gradientUnits="userSpaceOnUse">' +
-        '<stop stop-color="#6e5cff"/><stop offset="1" stop-color="#0ff4c6"/></linearGradient></defs></svg>' +
-        '<p style="margin:24px 0 8px;color:#6e5cff;font-size:1rem;letter-spacing:.05em">SECURITY VIOLATION</p>' +
-        '<p style="margin:0;color:rgba(255,255,255,.3);font-size:.75rem">Inspection tools are not allowed</p>' +
-        '</body>';
-    } catch (e) {}
-  }
-
-  /* ── detection 1: window size delta ────────────────────────── */
-  function sizeCheck() {
-    return (
-      W.outerWidth  - W.innerWidth  > 160 ||
-      W.outerHeight - W.innerHeight > 160
-    );
-  }
-
-  /* ── detection 2: console toString probe ───────────────────── */
-  var _probe = /x/;
-  _probe.toString = lockdown;
-
   /* ── silence console ────────────────────────────────────────── */
   var _noop = function () {};
   ['log','debug','info','warn','error','table','dir','dirxml',
@@ -70,18 +30,6 @@
    'profile','profileEnd'].forEach(function (m) {
     try { C[m] = _noop; } catch (e) {}
   });
-
-  /* ── periodic guard — re-checks owner status each tick ─────── */
-  /* Only the console toString probe remains — it is the one check */
-  /* that is 100% specific to an open desktop DevTools panel and   */
-  /* is completely inert on mobile browsers (any mode).            */
-  setInterval(function () {
-    if (isOwner()) return;   // logged in → nothing to do
-    /* console toString probe — only fires when desktop DevTools panel */
-    /* is actively open; completely inert on mobile browsers.          */
-    _origLog(_probe);
-    try { C.clear(); } catch (e) {}
-  }, 1000);
 
   /* ── keyboard shortcuts ─────────────────────────────────────── */
   D.addEventListener('keydown', function (e) {

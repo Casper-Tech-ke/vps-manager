@@ -48,12 +48,6 @@
         '<p style="margin:0;color:rgba(255,255,255,.3);font-size:.75rem">Inspection tools are not allowed</p>' +
         '</body>';
     } catch (e) {}
-
-    function loop() {
-      try { W.location.reload(true); } catch (e) {}
-      setTimeout(loop, 400);
-    }
-    setTimeout(loop, 600);
   }
 
   /* ── detection 1: window size delta ────────────────────────── */

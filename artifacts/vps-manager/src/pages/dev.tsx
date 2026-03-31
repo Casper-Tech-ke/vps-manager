@@ -279,7 +279,7 @@ export default function DevPage() {
                   </div>
 
                   <div className="flex flex-wrap gap-2 justify-center sm:justify-start">
-                    <a href={`https://github.com/Casper-Tech-ke`}
+                    <a href={user.html_url}
                       target="_blank" rel="noopener noreferrer"
                       className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition-opacity hover:opacity-80"
                       style={{ background: "linear-gradient(135deg,#6e5cff,#0ff4c6)", color: "#08090d" }}>

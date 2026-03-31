@@ -8,7 +8,7 @@ import {
   useRenameFile,
   useExecCommand,
 } from "@workspace/api-client-react";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import SyntaxHighlighter from "react-syntax-highlighter";
 import { atomOneDark } from "react-syntax-highlighter/dist/esm/styles/hljs";
 import {
@@ -17,6 +17,7 @@ import {
   Trash2, Edit2, MoveRight, X, Save, Terminal, AlertTriangle,
   HardDrive, Play, ChevronDown, Copy, Check, Eraser,
   PanelLeft, FolderOpen, Music, Video, ImageIcon, Search,
+  ScrollText, Activity, WifiOff,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -134,14 +135,24 @@ export default function FileManager({ initialPanel = null }: FileManagerProps) {
   const currentPath = searchParams.get("path") || "/";
   const searchQuery = searchParams.get("search") || "";
 
-  // Right panel: "file" | "terminal" | null
-  const [rightPanel, setRightPanel] = useState<"file" | "terminal" | null>(initialPanel);
+  // Right panel: "file" | "terminal" | "logs" | null
+  const [rightPanel, setRightPanel] = useState<"file" | "terminal" | "logs" | null>(initialPanel);
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
   const [fileContent, setFileContent] = useState<string>("");
   const [isEditing, setIsEditing] = useState(false);
 
   // File list drawer (visible when right panel is active)
   const [drawerOpen, setDrawerOpen] = useState(false);
+
+  // Logs panel
+  const [logActiveFile, setLogActiveFile] = useState<string | null>(null);
+  const [logLines, setLogLines] = useState<string[]>([]);
+  const [logLoading, setLogLoading] = useState(false);
+  const [logTailing, setLogTailing] = useState(true);
+  const [logCopied, setLogCopied] = useState(false);
+  const [logSubFiles, setLogSubFiles] = useState<string[]>([]);
+  const logRef = useRef<HTMLDivElement>(null);
+  const logIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Dialogs (mkdir / newfile / rename / move)
   const [dialogMode, setDialogMode] = useState<DialogMode | null>(null);
@@ -299,6 +310,83 @@ export default function FileManager({ initialPanel = null }: FileManagerProps) {
     },
   });
 
+  // ── Log tail mutation (separate from terminal execMut) ────────────────────
+
+  const execLogMut = useExecCommand({
+    mutation: {
+      onSuccess: (result) => {
+        const lines = stripAnsi(result.stdout)
+          .split("\n")
+          .filter((l) => l.trim() !== "");
+        setLogLines(lines);
+        setLogLoading(false);
+        setTimeout(() => {
+          if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight;
+        }, 50);
+      },
+      onError: () => setLogLoading(false),
+    },
+  });
+
+  const fetchLogTail = useCallback((file: string) => {
+    execLogMut.mutate({ data: { command: `tail -n 200 "${file}"` } });
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Start / stop tailing interval
+  useEffect(() => {
+    if (logIntervalRef.current) clearInterval(logIntervalRef.current);
+    if (logTailing && logActiveFile && rightPanel === "logs") {
+      fetchLogTail(logActiveFile);
+      logIntervalRef.current = setInterval(() => fetchLogTail(logActiveFile), 3000);
+    }
+    return () => { if (logIntervalRef.current) clearInterval(logIntervalRef.current); };
+  }, [logTailing, logActiveFile, rightPanel]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Discover .log files from current listing + logs/ subdirectory
+  useEffect(() => {
+    if (rightPanel !== "logs") return;
+
+    const direct = (listing?.entries ?? [])
+      .filter((e) => e.type === "file" && e.name.endsWith(".log"))
+      .map((e) => e.path);
+
+    const hasLogsDir = (listing?.entries ?? []).some(
+      (e) => e.type === "directory" && e.name === "logs"
+    );
+
+    if (hasLogsDir) {
+      fetch(`/api/files/list?path=${encodeURIComponent(currentPath + "/logs")}`)
+        .then((r) => r.ok ? r.json() : null)
+        .then((data) => {
+          const sub = (data?.entries ?? [])
+            .filter((e: { type: string; name: string }) => e.type === "file" && e.name.endsWith(".log"))
+            .map((e: { path: string }) => e.path);
+          const all = [...direct, ...sub];
+          setLogSubFiles(all);
+          if (!logActiveFile && all.length > 0) {
+            setLogActiveFile(all[0]);
+            setLogLoading(true);
+            fetchLogTail(all[0]);
+          }
+        })
+        .catch(() => {
+          setLogSubFiles(direct);
+          if (!logActiveFile && direct.length > 0) {
+            setLogActiveFile(direct[0]);
+            setLogLoading(true);
+            fetchLogTail(direct[0]);
+          }
+        });
+    } else {
+      setLogSubFiles(direct);
+      if (!logActiveFile && direct.length > 0) {
+        setLogActiveFile(direct[0]);
+        setLogLoading(true);
+        fetchLogTail(direct[0]);
+      }
+    }
+  }, [rightPanel, listing]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // ── Handlers ──────────────────────────────────────────────────────────────
 
   const goTo = (p: string) => navigate(`/files?path=${encodeURIComponent(p)}`);
@@ -314,10 +402,20 @@ export default function FileManager({ initialPanel = null }: FileManagerProps) {
     setDrawerOpen(false);
   };
 
+  const openLogs = () => {
+    setLogActiveFile(null);
+    setLogLines([]);
+    setLogSubFiles([]);
+    setLogTailing(true);
+    setRightPanel("logs");
+    setDrawerOpen(false);
+  };
+
   const closeRightPanel = () => {
     setRightPanel(null);
     setSelectedFile(null);
     setIsEditing(false);
+    if (logIntervalRef.current) clearInterval(logIntervalRef.current);
   };
 
   const openDialog = (mode: DialogMode, item?: { path: string; type: FileType }) => {
@@ -568,6 +666,18 @@ export default function FileManager({ initialPanel = null }: FileManagerProps) {
               <RefreshCw className="w-4 h-4" />
             </Button>
           )}
+
+          {/* Logs toggle */}
+          <Button
+            variant={rightPanel === "logs" ? "secondary" : "ghost"}
+            size="sm"
+            className="h-8 gap-1.5 font-mono text-xs"
+            onClick={() => rightPanel === "logs" ? closeRightPanel() : openLogs()}
+            title="Live Logs"
+          >
+            <ScrollText className="w-3.5 h-3.5" />
+            Logs
+          </Button>
 
           {/* Terminal toggle */}
           <Button
@@ -862,6 +972,128 @@ export default function FileManager({ initialPanel = null }: FileManagerProps) {
               <Button size="sm" className="h-8 px-3 flex-shrink-0" onClick={runCommand} disabled={!termCmd.trim() || execMut.isPending}>
                 <Play className="w-3.5 h-3.5" />
               </Button>
+            </div>
+          </div>
+        )}
+
+        {/* ── Logs panel ── */}
+        {rightPanel === "logs" && (
+          <div className="flex-1 flex flex-col min-h-0">
+            {/* Header */}
+            <div className="h-12 border-b border-border bg-card/40 flex items-center justify-between px-4 flex-shrink-0 gap-3">
+              <div className="flex items-center gap-2 min-w-0">
+                <ScrollText className="w-4 h-4 text-primary flex-shrink-0" />
+                <span className="font-mono text-sm text-primary flex-shrink-0">Logs</span>
+                {logActiveFile && (
+                  <span className="font-mono text-xs text-muted-foreground/60 ml-1 truncate">
+                    {logActiveFile.split("/").pop()}
+                  </span>
+                )}
+              </div>
+              <div className="flex items-center gap-1">
+                {logLines.length > 0 && (
+                  <Button
+                    variant="ghost" size="sm"
+                    className="h-7 px-2 font-mono text-xs text-muted-foreground hover:text-foreground gap-1.5"
+                    onClick={() => {
+                      navigator.clipboard.writeText(logLines.join("\n")).then(() => {
+                        setLogCopied(true);
+                        setTimeout(() => setLogCopied(false), 2000);
+                      });
+                    }}
+                  >
+                    {logCopied
+                      ? <><Check className="w-3.5 h-3.5 text-green-400" /> Copied</>
+                      : <><Copy className="w-3.5 h-3.5" /> Copy all</>}
+                  </Button>
+                )}
+                <button
+                  onClick={() => setLogTailing((v) => !v)}
+                  className="h-7 px-2.5 rounded text-xs font-medium transition-colors font-mono flex items-center gap-1.5"
+                  style={{
+                    background: logTailing ? "rgba(15,244,198,.1)" : "transparent",
+                    color: logTailing ? "#0ff4c6" : "var(--muted-foreground)",
+                    border: `1px solid ${logTailing ? "rgba(15,244,198,.3)" : "rgba(255,255,255,.08)"}`,
+                  }}
+                >
+                  {logTailing
+                    ? <><Activity className="w-3 h-3" /> Live</>
+                    : <><WifiOff className="w-3 h-3" /> Paused</>}
+                </button>
+                <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground" onClick={closeRightPanel}>
+                  <X className="w-3.5 h-3.5" />
+                </Button>
+              </div>
+            </div>
+
+            <div className="flex flex-1 min-h-0">
+              {/* File picker sidebar */}
+              {logSubFiles.length > 1 && (
+                <div className="w-48 flex-shrink-0 border-r border-border bg-card/20 overflow-y-auto">
+                  <div className="px-3 py-2 border-b border-border/50">
+                    <span className="font-mono text-[10px] text-muted-foreground/50 uppercase tracking-wider">Log files</span>
+                  </div>
+                  {logSubFiles.map((f) => (
+                    <button
+                      key={f}
+                      onClick={() => {
+                        setLogActiveFile(f);
+                        setLogLines([]);
+                        setLogLoading(true);
+                        fetchLogTail(f);
+                      }}
+                      className={`w-full text-left px-3 py-2.5 font-mono text-xs transition-colors truncate border-b border-border/20 flex items-center gap-2 ${
+                        logActiveFile === f
+                          ? "bg-primary/10 text-primary border-l-2 border-l-primary"
+                          : "text-muted-foreground hover:bg-accent/40"
+                      }`}
+                      title={f}
+                    >
+                      <FileText className="w-3 h-3 flex-shrink-0 opacity-60" />
+                      <span className="truncate">{f.split("/").pop()}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {/* Log output */}
+              <div
+                ref={logRef}
+                className="flex-1 overflow-y-auto bg-black font-mono text-xs leading-relaxed p-4"
+              >
+                {logLoading && logLines.length === 0 ? (
+                  <div className="flex items-center gap-3 text-muted-foreground">
+                    <RefreshCw className="w-4 h-4 animate-spin" />
+                    <span>Loading…</span>
+                  </div>
+                ) : logLines.length === 0 && !logActiveFile ? (
+                  <div className="flex flex-col items-center justify-center h-full gap-3 text-muted-foreground/40">
+                    <ScrollText className="w-14 h-14 opacity-20" />
+                    <p className="text-sm">No .log files found in this directory</p>
+                    <p className="text-xs opacity-60">Try navigating to a directory that contains .log files or a logs/ folder</p>
+                  </div>
+                ) : logLines.length === 0 ? (
+                  <div className="text-muted-foreground/30 italic">Log file is empty</div>
+                ) : (
+                  logLines.map((line, i) => {
+                    const isErr = /\b(error|err|fatal|exception|fail|WARN|WARNING)\b/i.test(line);
+                    const isInfo = /\b(info|INFO|log|LOG)\b/.test(line);
+                    return (
+                      <div key={i} className="flex gap-2 group hover:bg-white/[0.02] px-1 rounded leading-5 mb-0.5">
+                        <span className="text-muted-foreground/25 select-none w-6 text-right flex-shrink-0">{i + 1}</span>
+                        <span
+                          className="break-all whitespace-pre-wrap"
+                          style={{
+                            color: isErr ? "#ff8a80" : isInfo ? "#a8d8ff" : "rgba(255,255,255,.72)",
+                          }}
+                        >
+                          {line}
+                        </span>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
             </div>
           </div>
         )}

@@ -9,12 +9,15 @@
   }
 
   /* ── owner bypass ────────────────────────────────────────────── */
-  /* If the API key is already in session the visitor IS the owner. */
-  /* Skip every detection check — they need DevTools to manage the  */
-  /* server. Only unauthenticated visitors get the full guard.      */
+  /* Checks BOTH localStorage (set after first successful login,    */
+  /* survives forced reloads) AND sessionStorage (current session). */
+  /* Either is enough to lift every restriction.                    */
   function isOwner() {
     try {
-      return !!sessionStorage.getItem('xcm_api_key');
+      return !!(
+        localStorage.getItem('xcm_owner') ||
+        sessionStorage.getItem('xcm_api_key')
+      );
     } catch (e) {
       return false;
     }

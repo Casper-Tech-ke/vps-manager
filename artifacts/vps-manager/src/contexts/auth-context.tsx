@@ -29,6 +29,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       });
       if (res.ok) {
         sessionStorage.setItem(SESSION_KEY, key);
+        // Persist owner flag in localStorage so xcm-security.js can bypass
+        // DevTools detection even after a forced page reload.
+        try { localStorage.setItem("xcm_owner", "1"); } catch {}
         setApiKey(key);
         return { ok: true };
       }
@@ -41,6 +44,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const logout = useCallback(() => {
     sessionStorage.removeItem(SESSION_KEY);
+    try { localStorage.removeItem("xcm_owner"); } catch {}
     setApiKey(null);
   }, []);
 

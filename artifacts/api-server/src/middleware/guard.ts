@@ -11,10 +11,6 @@ const BOT_UA = [
   /bot[^t]/i, /spider/i, /crawl/i, /scan/i, /shodan/i,
 ];
 
-// ── Custom client header the browser always sends ─────────────────────────
-// Stored in the JS bundle — keeps out casual curl users who don't read source
-const XCM_CLIENT_TOKEN = "xcm-browser-v1";
-
 // ── In-memory rate limiter + IP ban list ───────────────────────────────────
 interface RateEntry { count: number; resetAt: number }
 
@@ -109,18 +105,6 @@ export function botGuard(req: Request, res: Response, next: NextFunction): void 
     addStrike(ip);
     res.status(403).json({ error: "Forbidden" });
     return;
-  }
-
-  // 4. Custom client header — every request from the browser app carries this.
-  //    Skip only for the /health ping (used by uptime monitors which are exempt).
-  const isHealth = req.path === "/health";
-  if (!isHealth) {
-    const clientToken = req.headers["x-xcm-client"];
-    if (clientToken !== XCM_CLIENT_TOKEN) {
-      addStrike(ip);
-      res.status(403).json({ error: "Forbidden" });
-      return;
-    }
   }
 
   next();

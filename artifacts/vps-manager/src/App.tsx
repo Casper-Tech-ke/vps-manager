@@ -10,6 +10,7 @@ import { Footer } from "@/components/footer";
 import LoginPage from "@/pages/login";
 import HomePage from "@/pages/home";
 import FileManager from "@/pages/file-manager";
+import DevPage from "@/pages/dev";
 import NotFound from "@/pages/not-found";
 
 const queryClient = new QueryClient({
@@ -74,7 +75,7 @@ function AppRoutes() {
 
       <Route path="/dev">
         <ProtectedLayout>
-          <NotFound />
+          <DevPage />
         </ProtectedLayout>
       </Route>
 

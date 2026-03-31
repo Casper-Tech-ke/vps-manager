@@ -1,0 +1,414 @@
+import { useEffect, useState, useCallback } from "react";
+import { useLocation } from "wouter";
+import { useAuth } from "@/contexts/auth-context";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Skeleton } from "@/components/ui/skeleton";
+import { useToast } from "@/hooks/use-toast";
+import {
+  Cpu, MemoryStick, HardDrive, Activity,
+  Server, RefreshCw, FolderOpen, Search, Trash2,
+  Network, Users, Terminal,
+} from "lucide-react";
+
+interface SystemInfo {
+  hostname: string;
+  os: string;
+  kernel: string;
+  arch: string;
+  platform: string;
+  uptime: string;
+  uptimeSeconds: number;
+  cpu: {
+    model: string;
+    cores: number;
+    loadAvg: { "1m": string; "5m": string; "15m": string };
+  };
+  memory: {
+    total: number;
+    used: number;
+    free: number;
+    usagePercent: string;
+  };
+  disk: {
+    source: string;
+    fstype: string;
+    size: string;
+    used: string;
+    avail: string;
+    usePercent: string;
+    mountedOn: string;
+  }[];
+  network: { name: string; address: string; family: string }[];
+  loggedUsers: string[];
+}
+
+function fmtBytes(b: number) {
+  if (b === 0) return "0 B";
+  const k = 1024;
+  const sizes = ["B", "KB", "MB", "GB", "TB"];
+  const i = Math.floor(Math.log(b) / Math.log(k));
+  return (b / Math.pow(k, i)).toFixed(1) + " " + sizes[i];
+}
+
+function StatCard({
+  icon: Icon,
+  label,
+  value,
+  sub,
+  progress,
+  color = "#6e5cff",
+}: {
+  icon: React.ElementType;
+  label: string;
+  value: string;
+  sub?: string;
+  progress?: number;
+  color?: string;
+}) {
+  return (
+    <div
+      className="rounded-2xl p-5"
+      style={{ background: "#0f1117", border: "1px solid rgba(110,92,255,.18)" }}
+    >
+      <div className="flex items-center justify-between mb-3">
+        <span className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">{label}</span>
+        <div
+          className="w-8 h-8 rounded-lg flex items-center justify-center"
+          style={{ background: `${color}22` }}
+        >
+          <Icon className="w-4 h-4" style={{ color }} />
+        </div>
+      </div>
+      <div className="text-2xl font-black mb-1 text-foreground">{value}</div>
+      {sub && <div className="text-xs text-muted-foreground mb-2">{sub}</div>}
+      {progress !== undefined && (
+        <div className="h-1.5 rounded-full mt-2" style={{ background: "rgba(255,255,255,.06)" }}>
+          <div
+            className="h-full rounded-full transition-all duration-700"
+            style={{
+              width: `${Math.min(100, progress)}%`,
+              background: progress > 80
+                ? "linear-gradient(90deg,#ff6b6b,#ff4757)"
+                : "linear-gradient(90deg,#6e5cff,#0ff4c6)",
+            }}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
+export default function HomePage() {
+  const { apiKey } = useAuth();
+  const [, navigate] = useLocation();
+  const { toast } = useToast();
+  const [info, setInfo] = useState<SystemInfo | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [clearing, setClearing] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+
+  const fetchInfo = useCallback(async (quiet = false) => {
+    if (!quiet) setRefreshing(true);
+    try {
+      const res = await fetch("/api/system/info", {
+        headers: apiKey ? { Authorization: `Bearer ${apiKey}` } : {},
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setInfo(data);
+      }
+    } catch { /* ignore */ }
+    setLoading(false);
+    setRefreshing(false);
+  }, [apiKey]);
+
+  useEffect(() => {
+    fetchInfo(false);
+    const interval = setInterval(() => fetchInfo(true), 15000);
+    return () => clearInterval(interval);
+  }, [fetchInfo]);
+
+  async function clearCache() {
+    setClearing(true);
+    try {
+      const res = await fetch("/api/system/clear-cache", {
+        method: "POST",
+        headers: apiKey ? { Authorization: `Bearer ${apiKey}` } : {},
+      });
+      const body = await res.json();
+      toast({ title: "Cache cleared", description: body.message });
+    } catch {
+      toast({ title: "Failed to clear cache", variant: "destructive" });
+    }
+    setClearing(false);
+  }
+
+  function handleSearch(e: React.FormEvent) {
+    e.preventDefault();
+    if (searchQuery.trim()) {
+      navigate(`/files?path=/&q=${encodeURIComponent(searchQuery.trim())}`);
+    }
+  }
+
+  const memPct = info ? parseFloat(info.memory.usagePercent) : 0;
+  const mainDisk = info?.disk.find((d) => d.mountedOn === "/") ?? info?.disk[0];
+  const diskPct = mainDisk ? parseFloat(mainDisk.usePercent) : 0;
+  const cpuLoad = info ? parseFloat(info.cpu.loadAvg["1m"]) / info.cpu.cores * 100 : 0;
+
+  return (
+    <div className="flex-1 overflow-y-auto" style={{ background: "#08090d" }}>
+      {/* Hero / quick actions */}
+      <div
+        className="px-6 py-8"
+        style={{
+          background: "radial-gradient(ellipse 80% 60% at 50% 0%, rgba(110,92,255,.12) 0%, transparent 70%)",
+        }}
+      >
+        <div className="max-w-screen-xl mx-auto">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
+            <div>
+              <h1 className="text-3xl font-black tracking-tight mb-1">
+                <span className="brand-gradient">System</span>{" "}
+                <span className="text-foreground">Dashboard</span>
+              </h1>
+              {info && (
+                <p className="text-sm text-muted-foreground flex items-center gap-2 flex-wrap">
+                  <Server className="w-3.5 h-3.5" />
+                  <span className="font-mono">{info.hostname}</span>
+                  <span className="opacity-40">·</span>
+                  <span>{info.os}</span>
+                  <span className="opacity-40">·</span>
+                  <Clock className="w-3.5 h-3.5" />
+                  <span>Up {info.uptime}</span>
+                </p>
+              )}
+            </div>
+
+            <div className="flex items-center gap-2 flex-wrap">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => fetchInfo(false)}
+                disabled={refreshing}
+                className="h-9 gap-1.5 text-xs border-border/50"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? "animate-spin" : ""}`} />
+                Refresh
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => navigate("/files")}
+                className="h-9 gap-1.5 text-xs border-border/50"
+              >
+                <FolderOpen className="w-3.5 h-3.5" />
+                Browse Files
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => navigate("/terminal")}
+                className="h-9 gap-1.5 text-xs border-border/50"
+              >
+                <Terminal className="w-3.5 h-3.5" />
+                Terminal
+              </Button>
+              <Button
+                size="sm"
+                onClick={clearCache}
+                disabled={clearing}
+                className="h-9 gap-1.5 text-xs"
+                style={{ background: "rgba(110,92,255,.2)", color: "#6e5cff", border: "1px solid rgba(110,92,255,.4)" }}
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                {clearing ? "Clearing…" : "Clear Cache"}
+              </Button>
+            </div>
+          </div>
+
+          {/* Search bar */}
+          <form onSubmit={handleSearch} className="flex gap-2 max-w-xl mb-2">
+            <div className="relative flex-1">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+              <Input
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search files…"
+                className="pl-10 h-10 font-mono text-sm"
+                style={{ background: "#0f1117", borderColor: "rgba(110,92,255,.28)" }}
+              />
+            </div>
+            <Button
+              type="submit"
+              disabled={!searchQuery.trim()}
+              className="h-10 px-5 text-sm font-medium"
+              style={{ background: "linear-gradient(135deg,#6e5cff,#0ff4c6)", color: "#08090d", border: "none" }}
+            >
+              Search
+            </Button>
+          </form>
+        </div>
+      </div>
+
+      <div className="max-w-screen-xl mx-auto px-6 pb-8 space-y-8">
+        {/* Top stat cards */}
+        {loading ? (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            {[...Array(4)].map((_, i) => <Skeleton key={i} className="h-36 rounded-2xl" />)}
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <StatCard
+              icon={Cpu}
+              label="CPU Load"
+              value={`${Math.min(100, cpuLoad).toFixed(1)}%`}
+              sub={`${info?.cpu.cores} cores · ${info?.cpu.loadAvg["1m"]} / ${info?.cpu.loadAvg["5m"]} / ${info?.cpu.loadAvg["15m"]}`}
+              progress={cpuLoad}
+              color="#6e5cff"
+            />
+            <StatCard
+              icon={MemoryStick}
+              label="Memory"
+              value={`${info?.memory.usagePercent ?? 0}%`}
+              sub={`${fmtBytes(info?.memory.used ?? 0)} / ${fmtBytes(info?.memory.total ?? 0)}`}
+              progress={memPct}
+              color="#0ff4c6"
+            />
+            <StatCard
+              icon={HardDrive}
+              label="Root Disk"
+              value={mainDisk?.usePercent ?? "—"}
+              sub={`${mainDisk?.used ?? "?"} / ${mainDisk?.size ?? "?"} used`}
+              progress={diskPct}
+              color="#6e5cff"
+            />
+            <StatCard
+              icon={Activity}
+              label="Uptime"
+              value={info?.uptime ?? "—"}
+              sub={`Kernel ${info?.kernel ?? "—"}`}
+              color="#0ff4c6"
+            />
+          </div>
+        )}
+
+        {/* Details row */}
+        {!loading && info && (
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+            {/* System info */}
+            <div
+              className="rounded-2xl p-5"
+              style={{ background: "#0f1117", border: "1px solid rgba(110,92,255,.18)" }}
+            >
+              <div className="flex items-center gap-2 mb-4">
+                <Server className="w-4 h-4 text-purple-400" />
+                <h2 className="text-sm font-bold text-foreground">System Info</h2>
+              </div>
+              <div className="space-y-3 text-sm">
+                {[
+                  ["Hostname", info.hostname],
+                  ["OS", info.os],
+                  ["Kernel", info.kernel],
+                  ["Architecture", info.arch],
+                  ["Platform", info.platform],
+                ].map(([k, v]) => (
+                  <div key={k} className="flex justify-between gap-4">
+                    <span className="text-muted-foreground flex-shrink-0">{k}</span>
+                    <span className="font-mono text-xs text-foreground text-right truncate">{v}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Disk mounts */}
+            <div
+              className="rounded-2xl p-5"
+              style={{ background: "#0f1117", border: "1px solid rgba(110,92,255,.18)" }}
+            >
+              <div className="flex items-center gap-2 mb-4">
+                <HardDrive className="w-4 h-4" style={{ color: "#0ff4c6" }} />
+                <h2 className="text-sm font-bold text-foreground">Disk Mounts</h2>
+              </div>
+              <div className="space-y-3">
+                {info.disk.slice(0, 6).map((d, i) => {
+                  const pct = parseFloat(d.usePercent) || 0;
+                  return (
+                    <div key={i}>
+                      <div className="flex justify-between text-xs mb-1">
+                        <span className="font-mono text-foreground">{d.mountedOn}</span>
+                        <span className="text-muted-foreground">{d.used} / {d.size}</span>
+                      </div>
+                      <div className="h-1.5 rounded-full" style={{ background: "rgba(255,255,255,.06)" }}>
+                        <div
+                          className="h-full rounded-full"
+                          style={{
+                            width: `${Math.min(100, pct)}%`,
+                            background: pct > 80
+                              ? "linear-gradient(90deg,#ff6b6b,#ff4757)"
+                              : "linear-gradient(90deg,#6e5cff,#0ff4c6)",
+                          }}
+                        />
+                      </div>
+                      <div className="text-xs text-muted-foreground mt-0.5">{d.usePercent} used</div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Network + users */}
+            <div className="space-y-4">
+              <div
+                className="rounded-2xl p-5"
+                style={{ background: "#0f1117", border: "1px solid rgba(110,92,255,.18)" }}
+              >
+                <div className="flex items-center gap-2 mb-3">
+                  <Network className="w-4 h-4 text-purple-400" />
+                  <h2 className="text-sm font-bold text-foreground">Network</h2>
+                </div>
+                <div className="space-y-2">
+                  {info.network.slice(0, 4).map((n, i) => (
+                    <div key={i} className="flex justify-between text-xs">
+                      <span className="font-mono text-muted-foreground">{n.name}</span>
+                      <span className="font-mono text-foreground">{n.address}</span>
+                    </div>
+                  ))}
+                  {info.network.length === 0 && (
+                    <p className="text-xs text-muted-foreground/50">No external interfaces</p>
+                  )}
+                </div>
+              </div>
+
+              <div
+                className="rounded-2xl p-5"
+                style={{ background: "#0f1117", border: "1px solid rgba(110,92,255,.18)" }}
+              >
+                <div className="flex items-center gap-2 mb-3">
+                  <Users className="w-4 h-4" style={{ color: "#0ff4c6" }} />
+                  <h2 className="text-sm font-bold text-foreground">Logged Users</h2>
+                </div>
+                {info.loggedUsers.length === 0 ? (
+                  <p className="text-xs text-muted-foreground/50">No users logged in</p>
+                ) : (
+                  <div className="flex flex-wrap gap-1.5">
+                    {info.loggedUsers.map((u) => (
+                      <span
+                        key={u}
+                        className="text-xs font-mono px-2 py-0.5 rounded"
+                        style={{ background: "rgba(110,92,255,.15)", color: "#6e5cff" }}
+                      >
+                        {u}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}

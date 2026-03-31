@@ -15,7 +15,7 @@ import {
   Folder, FileText, File as FileIcon, Image, Code2, Database,
   ChevronRight, ArrowLeft, RefreshCw, FolderPlus, FilePlus,
   Trash2, Edit2, MoveRight, X, Save, Terminal, AlertTriangle,
-  HardDrive, Home, Play, ChevronDown, Copy, Check, Eraser,
+  HardDrive, Play, ChevronDown, Copy, Check, Eraser,
   PanelLeft, FolderOpen, Music, Video, ImageIcon,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -123,14 +123,18 @@ const rawUrl = (p: string) => `/api/files/raw?path=${encodeURIComponent(p)}`;
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
-export default function FileManager() {
+interface FileManagerProps {
+  initialPanel?: "terminal" | "file" | null;
+}
+
+export default function FileManager({ initialPanel = null }: FileManagerProps) {
   const searchString = useSearch();
   const [, navigate] = useLocation();
   const searchParams = new URLSearchParams(searchString);
   const currentPath = searchParams.get("path") || "/";
 
   // Right panel: "file" | "terminal" | null
-  const [rightPanel, setRightPanel] = useState<"file" | "terminal" | null>(null);
+  const [rightPanel, setRightPanel] = useState<"file" | "terminal" | null>(initialPanel);
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
   const [fileContent, setFileContent] = useState<string>("");
   const [isEditing, setIsEditing] = useState(false);
@@ -476,16 +480,10 @@ export default function FileManager() {
 
   // ── Render ────────────────────────────────────────────────────────────────
   return (
-    <div className="flex flex-col h-screen bg-background text-foreground overflow-hidden">
+    <div className="flex flex-col flex-1 min-h-0 bg-background text-foreground overflow-hidden">
 
       {/* ── Top bar ── */}
-      <header className="flex-shrink-0 h-14 bg-card border-b border-border flex items-center gap-2 px-3">
-
-        {/* Logo */}
-        <div className="flex items-center gap-2 flex-shrink-0">
-          <HardDrive className="w-5 h-5 text-primary" />
-          <span className="font-mono font-bold text-sm text-primary hidden sm:block">FileMgr</span>
-        </div>
+      <header className="flex-shrink-0 h-12 bg-card border-b border-border flex items-center gap-2 px-3">
 
         {/* File list toggle — shown when right panel is active */}
         {rightPanelOpen && (
@@ -499,8 +497,6 @@ export default function FileManager() {
           </Button>
         )}
 
-        <div className="w-px h-5 bg-border mx-0.5" />
-
         {/* Breadcrumb */}
         <div className="flex items-center gap-0.5 flex-1 min-w-0 overflow-x-auto scrollbar-none font-mono text-sm">
           <Button
@@ -508,7 +504,7 @@ export default function FileManager() {
             className="h-7 px-2 flex-shrink-0 text-muted-foreground hover:text-primary"
             onClick={() => goTo("/")}
           >
-            <Home className="w-3.5 h-3.5" />
+            <HardDrive className="w-3.5 h-3.5" />
           </Button>
           {crumbs.map((crumb, idx) => {
             const p = "/" + crumbs.slice(0, idx + 1).join("/");

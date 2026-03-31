@@ -1,8 +1,14 @@
-import { Router as WouterRouter, Switch, Route } from "wouter";
+import { Router as WouterRouter, Switch, Route, Redirect, useLocation } from "wouter";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { useEffect } from "react";
+import { AuthProvider, useAuth } from "@/contexts/auth-context";
+import { WelcomeModal } from "@/components/welcome-modal";
+import { Navbar } from "@/components/navbar";
+import { Footer } from "@/components/footer";
+import LoginPage from "@/pages/login";
+import HomePage from "@/pages/home";
 import FileManager from "@/pages/file-manager";
 import NotFound from "@/pages/not-found";
 
@@ -19,19 +25,78 @@ function ThemeSetter() {
   return null;
 }
 
+function ProtectedLayout({ children }: { children: React.ReactNode }) {
+  const { isAuthenticated } = useAuth();
+  const [location] = useLocation();
+
+  if (!isAuthenticated) {
+    return <Redirect to="/login" />;
+  }
+
+  return (
+    <div className="flex flex-col min-h-screen" style={{ background: "#08090d" }}>
+      <Navbar />
+      <main className="flex-1 flex flex-col min-h-0 overflow-hidden">
+        {children}
+      </main>
+      <Footer />
+      <WelcomeModal />
+    </div>
+  );
+}
+
+function AppRoutes() {
+  const { isAuthenticated } = useAuth();
+
+  return (
+    <Switch>
+      <Route path="/login">
+        {isAuthenticated ? <Redirect to="/" /> : <LoginPage />}
+      </Route>
+
+      <Route path="/">
+        <ProtectedLayout>
+          <HomePage />
+        </ProtectedLayout>
+      </Route>
+
+      <Route path="/files">
+        <ProtectedLayout>
+          <FileManager />
+        </ProtectedLayout>
+      </Route>
+
+      <Route path="/terminal">
+        <ProtectedLayout>
+          <FileManager initialPanel="terminal" />
+        </ProtectedLayout>
+      </Route>
+
+      <Route path="/dev">
+        <ProtectedLayout>
+          <NotFound />
+        </ProtectedLayout>
+      </Route>
+
+      <Route>
+        <NotFound />
+      </Route>
+    </Switch>
+  );
+}
+
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <ThemeSetter />
-      <TooltipProvider>
-        <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
-          <Switch>
-            <Route path="/" component={FileManager} />
-            <Route component={NotFound} />
-          </Switch>
-        </WouterRouter>
-        <Toaster />
-      </TooltipProvider>
+      <AuthProvider>
+        <TooltipProvider>
+          <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
+            <AppRoutes />
+          </WouterRouter>
+          <Toaster />
+        </TooltipProvider>
+      </AuthProvider>
     </QueryClientProvider>
   );
 }

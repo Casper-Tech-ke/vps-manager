@@ -1,0 +1,14 @@
+uploads = []
+outputs = []
+
+[[generated]]
+id = "ybLQoq14p54FGsUrc6zVY"
+uri = "file://artifacts/vps-manager/public/icon-source.png"
+type = "image"
+title = "xcasper manager icon"
+
+[[generated]]
+id = "5BAgZmji1Kz0drOspwuta"
+uri = "file://artifacts/vps-manager/public/og-image.png"
+type = "image"
+title = "xcasper og image"

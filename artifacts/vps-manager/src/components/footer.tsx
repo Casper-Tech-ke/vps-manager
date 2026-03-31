@@ -20,7 +20,7 @@ export function Footer() {
     >
       <div className="max-w-screen-xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-2">
         <p className="text-xs text-muted-foreground text-center sm:text-left">
-          © 2025{" "}
+          © 2026{" "}
           <span className="font-semibold text-foreground/70">XCASPER MANAGER</span>{" "}
           by{" "}
           <span className="brand-gradient font-semibold">TRABY CASPER</span>

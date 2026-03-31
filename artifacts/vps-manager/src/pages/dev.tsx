@@ -279,6 +279,12 @@ export default function DevPage() {
                   </div>
 
                   <div className="flex flex-wrap gap-2 justify-center sm:justify-start">
+                    <a href={`https://github.com/Casper-Tech-ke`}
+                      target="_blank" rel="noopener noreferrer"
+                      className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition-opacity hover:opacity-80"
+                      style={{ background: "linear-gradient(135deg,#6e5cff,#0ff4c6)", color: "#08090d" }}>
+                      <Users className="w-4 h-4" /> Follow
+                    </a>
                     <a href={user.html_url} target="_blank" rel="noopener noreferrer"
                       className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold transition-all hover:opacity-80"
                       style={{ background: "rgba(110,92,255,.18)", color: "#a8a0ff", border: "1px solid rgba(110,92,255,.35)" }}>

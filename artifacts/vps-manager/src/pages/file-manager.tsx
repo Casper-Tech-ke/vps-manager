@@ -16,7 +16,7 @@ import {
   ChevronRight, ArrowLeft, RefreshCw, FolderPlus, FilePlus,
   Trash2, Edit2, MoveRight, X, Save, Terminal, AlertTriangle,
   HardDrive, Play, ChevronDown, Copy, Check, Eraser,
-  PanelLeft, FolderOpen, Music, Video, ImageIcon,
+  PanelLeft, FolderOpen, Music, Video, ImageIcon, Search,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -132,6 +132,7 @@ export default function FileManager({ initialPanel = null }: FileManagerProps) {
   const [, navigate] = useLocation();
   const searchParams = new URLSearchParams(searchString);
   const currentPath = searchParams.get("path") || "/";
+  const searchQuery = searchParams.get("q") || "";
 
   // Right panel: "file" | "terminal" | null
   const [rightPanel, setRightPanel] = useState<"file" | "terminal" | null>(initialPanel);
@@ -299,7 +300,7 @@ export default function FileManager({ initialPanel = null }: FileManagerProps) {
 
   // ── Handlers ──────────────────────────────────────────────────────────────
 
-  const goTo = (p: string) => navigate(`/?path=${encodeURIComponent(p)}`);
+  const goTo = (p: string) => navigate(`/files?path=${encodeURIComponent(p)}`);
 
   const openFile = (path: string) => {
     setSelectedFile(path);
@@ -383,8 +384,28 @@ export default function FileManager({ initialPanel = null }: FileManagerProps) {
 
   // ── File list (reused in main view + drawer) ──────────────────────────────
 
+  const filteredEntries = searchQuery
+    ? (listing?.entries ?? []).filter((e) =>
+        e.name.toLowerCase().includes(searchQuery.toLowerCase())
+      )
+    : listing?.entries ?? [];
+
   const FileList = ({ onNavigate }: { onNavigate?: () => void }) => (
     <ScrollArea className="flex-1">
+      {searchQuery && (
+        <div className="px-4 py-2 border-b border-border/30 flex items-center gap-2 bg-primary/5">
+          <Search className="w-3.5 h-3.5 text-primary flex-shrink-0" />
+          <span className="text-xs font-mono text-primary">
+            Showing {filteredEntries.length} result{filteredEntries.length !== 1 ? "s" : ""} for "{searchQuery}"
+          </span>
+          <button
+            className="ml-auto text-xs text-muted-foreground hover:text-foreground"
+            onClick={() => navigate(`/files?path=${encodeURIComponent(currentPath)}`)}
+          >
+            Clear
+          </button>
+        </div>
+      )}
       {isLoading ? (
         <div className="p-3 space-y-1">
           {Array.from({ length: 8 }).map((_, i) => <Skeleton key={i} className="h-11 w-full rounded-md" />)}
@@ -397,7 +418,7 @@ export default function FileManager({ initialPanel = null }: FileManagerProps) {
         </div>
       ) : (
         <div>
-          {listing?.parentPath != null && (
+          {!searchQuery && listing?.parentPath != null && (
             <div
               className="flex items-center gap-3 px-4 py-3 hover:bg-accent/40 cursor-pointer border-b border-border/30 transition-colors"
               onClick={() => { goTo(listing.parentPath!); onNavigate?.(); }}
@@ -406,13 +427,15 @@ export default function FileManager({ initialPanel = null }: FileManagerProps) {
               <span className="font-mono text-sm text-muted-foreground">..</span>
             </div>
           )}
-          {listing?.entries.length === 0 && (
+          {filteredEntries.length === 0 && (
             <div className="flex flex-col items-center justify-center h-40 text-muted-foreground gap-2">
               <Folder className="w-9 h-9 opacity-20" />
-              <p className="text-sm font-mono opacity-50">Empty folder</p>
+              <p className="text-sm font-mono opacity-50">
+                {searchQuery ? `No matches for "${searchQuery}"` : "Empty folder"}
+              </p>
             </div>
           )}
-          {listing?.entries.map((entry) => {
+          {filteredEntries.map((entry) => {
             const isSelected = selectedFile === entry.path;
             const entryType = entry.type as FileType;
             return (
@@ -581,7 +604,7 @@ export default function FileManager({ initialPanel = null }: FileManagerProps) {
             </div>
             <FileList />
             <div className="h-7 border-t border-border bg-card/20 flex items-center px-4 flex-shrink-0">
-              <span className="font-mono text-xs text-muted-foreground/50">{listing?.entries.length ?? 0} items</span>
+              <span className="font-mono text-xs text-muted-foreground/50">{filteredEntries.length} items</span>
             </div>
           </div>
         )}
@@ -836,7 +859,7 @@ export default function FileManager({ initialPanel = null }: FileManagerProps) {
             <FileList onNavigate={() => setDrawerOpen(false)} />
           </div>
           <div className="h-7 border-t border-border bg-card/20 flex items-center justify-between px-4 flex-shrink-0">
-            <span className="font-mono text-xs text-muted-foreground/50">{listing?.entries.length ?? 0} items</span>
+            <span className="font-mono text-xs text-muted-foreground/50">{filteredEntries.length} items</span>
             <Button variant="ghost" size="sm" className="h-6 px-2 font-mono text-xs" onClick={() => { refetch(); }}>
               <RefreshCw className="w-3 h-3 mr-1" /> Refresh
             </Button>

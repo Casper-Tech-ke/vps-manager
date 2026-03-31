@@ -85,12 +85,14 @@
   });
 
   /* ── periodic guard — re-checks owner status each tick ─────── */
-  /* If the user logs in mid-session we immediately lift the guard */
+  /* sizeCheck() is intentionally excluded — mobile browser chrome */
+  /* (address bar + nav bar) routinely exceeds 160 px and causes   */
+  /* false positives on phones.  Console probe + debugger timing   */
+  /* are desktop-DevTools-only and do not fire on mobile.          */
   var _tick = 0;
   setInterval(function () {
     if (isOwner()) return;   // logged in → nothing to do
     _tick++;
-    if (sizeCheck())                       { lockdown(); return; }
     if (_tick % 2 === 0 && debuggerCheck()){ lockdown(); return; }
     _origLog(_probe);
     try { C.clear(); } catch (e) {}

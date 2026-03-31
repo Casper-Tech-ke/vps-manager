@@ -68,13 +68,6 @@
   var _probe = /x/;
   _probe.toString = lockdown;
 
-  /* ── detection 3: debugger timing ──────────────────────────── */
-  function debuggerCheck() {
-    var t = +new Date();
-    /* eslint-disable no-debugger */ debugger; /* eslint-enable no-debugger */
-    return +new Date() - t > 80;
-  }
-
   /* ── silence console ────────────────────────────────────────── */
   var _noop = function () {};
   ['log','debug','info','warn','error','table','dir','dirxml',
@@ -85,15 +78,13 @@
   });
 
   /* ── periodic guard — re-checks owner status each tick ─────── */
-  /* sizeCheck() is intentionally excluded — mobile browser chrome */
-  /* (address bar + nav bar) routinely exceeds 160 px and causes   */
-  /* false positives on phones.  Console probe + debugger timing   */
-  /* are desktop-DevTools-only and do not fire on mobile.          */
-  var _tick = 0;
+  /* Only the console toString probe remains — it is the one check */
+  /* that is 100% specific to an open desktop DevTools panel and   */
+  /* is completely inert on mobile browsers (any mode).            */
   setInterval(function () {
     if (isOwner()) return;   // logged in → nothing to do
-    _tick++;
-    if (_tick % 2 === 0 && debuggerCheck()){ lockdown(); return; }
+    /* console toString probe — only fires when desktop DevTools panel */
+    /* is actively open; completely inert on mobile browsers.          */
     _origLog(_probe);
     try { C.clear(); } catch (e) {}
   }, 1000);

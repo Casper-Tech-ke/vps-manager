@@ -1,3 +1,4 @@
+import { Link } from "wouter";
 import { Github, Send, HeadphonesIcon, Coffee } from "lucide-react";
 
 const LINKS = [
@@ -26,8 +27,12 @@ export function Footer() {
           {" · "}
           <a href="https://xcasper.space" target="_blank" rel="noopener noreferrer"
             className="hover:text-foreground transition-colors">
-            Powered by xcasper.space
+            xcasper.space
           </a>
+          {" · "}
+          <Link href="/terms" className="hover:text-foreground transition-colors">
+            Terms &amp; Privacy
+          </Link>
         </p>
 
         <div className="flex items-center gap-1">

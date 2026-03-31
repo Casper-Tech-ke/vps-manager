@@ -8,7 +8,7 @@ import { useToast } from "@/hooks/use-toast";
 import {
   Cpu, MemoryStick, HardDrive, Activity, Clock,
   Server, RefreshCw, FolderOpen, Search, Trash2,
-  Network, Users, Terminal,
+  Network, Users, Terminal, Layers, CheckCircle2, XCircle, AlertCircle,
 } from "lucide-react";
 
 interface SystemInfo {
@@ -41,6 +41,22 @@ interface SystemInfo {
   }[];
   network: { name: string; address: string; family: string }[];
   loggedUsers: string[];
+}
+
+interface Pm2Process {
+  id: number;
+  name: string;
+  pid: number;
+  status: string;
+  cpu: number;
+  memory: number;
+  uptime: number;
+  restarts: number;
+  interpreter: string;
+  script: string;
+  cwd: string;
+  watch: boolean;
+  nodeVersion: string;
 }
 
 function fmtBytes(b: number) {
@@ -108,34 +124,47 @@ export default function HomePage() {
   const [refreshing, setRefreshing] = useState(false);
   const [clearing, setClearing] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const [pm2Processes, setPm2Processes] = useState<Pm2Process[]>([]);
+  const [pm2Available, setPm2Available] = useState(false);
+  const [pm2Loading, setPm2Loading] = useState(true);
+
+  const authHeaders = apiKey ? { Authorization: `Bearer ${apiKey}` } : {};
 
   const fetchInfo = useCallback(async (quiet = false) => {
     if (!quiet) setRefreshing(true);
     try {
-      const res = await fetch("/api/system/info", {
-        headers: apiKey ? { Authorization: `Bearer ${apiKey}` } : {},
-      });
-      if (res.ok) {
-        const data = await res.json();
-        setInfo(data);
-      }
+      const res = await fetch("/api/system/info", { headers: authHeaders });
+      if (res.ok) { const data = await res.json(); setInfo(data); }
     } catch { /* ignore */ }
     setLoading(false);
     setRefreshing(false);
   }, [apiKey]);
 
+  const fetchPm2 = useCallback(async () => {
+    try {
+      const res = await fetch("/api/system/pm2", { headers: authHeaders });
+      if (res.ok) {
+        const data = await res.json() as { available: boolean; processes: Pm2Process[] };
+        setPm2Available(data.available);
+        setPm2Processes(data.processes);
+      }
+    } catch { /* ignore */ }
+    setPm2Loading(false);
+  }, [apiKey]);
+
   useEffect(() => {
     fetchInfo(false);
-    const interval = setInterval(() => fetchInfo(true), 15000);
+    fetchPm2();
+    const interval = setInterval(() => { fetchInfo(true); fetchPm2(); }, 15000);
     return () => clearInterval(interval);
-  }, [fetchInfo]);
+  }, [fetchInfo, fetchPm2]);
 
   async function clearCache() {
     setClearing(true);
     try {
       const res = await fetch("/api/system/clear-cache", {
         method: "POST",
-        headers: apiKey ? { Authorization: `Bearer ${apiKey}` } : {},
+        headers: authHeaders,
       });
       const body = await res.json();
       toast({ title: "Cache cleared", description: body.message });
@@ -408,6 +437,105 @@ export default function HomePage() {
             </div>
           </div>
         )}
+
+        {/* PM2 Processes */}
+        <section>
+          <div className="flex items-center gap-2 mb-4">
+            <Layers className="w-4 h-4" style={{ color: "#0ff4c6" }} />
+            <h2 className="text-sm font-bold text-foreground">PM2 Processes</h2>
+            {!pm2Loading && pm2Available && pm2Processes.length > 0 && (
+              <span className="ml-auto text-xs px-2 py-0.5 rounded-full font-semibold"
+                style={{ background: "rgba(15,244,198,.12)", color: "#0ff4c6", border: "1px solid rgba(15,244,198,.2)" }}>
+                {pm2Processes.length} process{pm2Processes.length !== 1 ? "es" : ""}
+              </span>
+            )}
+          </div>
+
+          {pm2Loading ? (
+            <div className="space-y-2">
+              {[...Array(3)].map((_, i) => <Skeleton key={i} className="h-14 rounded-xl" />)}
+            </div>
+          ) : !pm2Available ? (
+            <div className="rounded-xl p-5 flex items-center gap-3"
+              style={{ background: "#0f1117", border: "1px solid rgba(110,92,255,.15)" }}>
+              <AlertCircle className="w-5 h-5 flex-shrink-0 text-muted-foreground/50" />
+              <div>
+                <p className="text-sm text-muted-foreground">PM2 is not installed or not running on this server.</p>
+                <p className="text-xs text-muted-foreground/60 mt-0.5">
+                  Install PM2 with{" "}
+                  <code className="font-mono px-1 py-0.5 rounded"
+                    style={{ background: "rgba(110,92,255,.12)", color: "#a8a0ff" }}>
+                    npm install -g pm2
+                  </code>
+                </p>
+              </div>
+            </div>
+          ) : pm2Processes.length === 0 ? (
+            <div className="rounded-xl p-5 flex items-center gap-3"
+              style={{ background: "#0f1117", border: "1px solid rgba(110,92,255,.15)" }}>
+              <Layers className="w-5 h-5 flex-shrink-0 text-muted-foreground/40" />
+              <p className="text-sm text-muted-foreground">No PM2 processes running.</p>
+            </div>
+          ) : (
+            <div className="rounded-2xl overflow-hidden"
+              style={{ background: "#0f1117", border: "1px solid rgba(110,92,255,.18)" }}>
+              {/* Table header */}
+              <div className="grid grid-cols-12 gap-2 px-4 py-2.5 text-xs font-semibold uppercase tracking-widest text-muted-foreground/60"
+                style={{ borderBottom: "1px solid rgba(110,92,255,.1)", background: "rgba(110,92,255,.04)" }}>
+                <div className="col-span-1">ID</div>
+                <div className="col-span-3">Name</div>
+                <div className="col-span-2">Status</div>
+                <div className="col-span-1">CPU</div>
+                <div className="col-span-2">Memory</div>
+                <div className="col-span-2">Restarts</div>
+                <div className="col-span-1">Watch</div>
+              </div>
+
+              {pm2Processes.map((proc, idx) => {
+                const isOnline = proc.status === "online";
+                const isStopped = proc.status === "stopped";
+                const StatusIcon = isOnline ? CheckCircle2 : isStopped ? XCircle : AlertCircle;
+                const statusColor = isOnline ? "#0ff4c6" : isStopped ? "#ff6b6b" : "#f59e0b";
+                return (
+                  <div
+                    key={proc.id}
+                    className="grid grid-cols-12 gap-2 px-4 py-3 text-xs items-center transition-colors hover:bg-white/[0.02]"
+                    style={{ borderBottom: idx < pm2Processes.length - 1 ? "1px solid rgba(110,92,255,.08)" : "none" }}
+                  >
+                    <div className="col-span-1 text-muted-foreground font-mono">{proc.id}</div>
+                    <div className="col-span-3">
+                      <p className="font-semibold text-foreground truncate">{proc.name}</p>
+                      <p className="text-muted-foreground/60 font-mono truncate mt-0.5">
+                        {proc.script ? proc.script.split("/").pop() : proc.interpreter}
+                      </p>
+                    </div>
+                    <div className="col-span-2 flex items-center gap-1">
+                      <StatusIcon className="w-3.5 h-3.5 flex-shrink-0" style={{ color: statusColor }} />
+                      <span className="font-medium capitalize" style={{ color: statusColor }}>{proc.status}</span>
+                    </div>
+                    <div className="col-span-1 font-mono text-foreground/80">{proc.cpu.toFixed(1)}%</div>
+                    <div className="col-span-2 font-mono text-foreground/80">{fmtBytes(proc.memory)}</div>
+                    <div className="col-span-2 text-muted-foreground">
+                      <span>{proc.restarts}</span>
+                      {proc.pid > 0 && (
+                        <span className="text-muted-foreground/50 ml-1">· pid {proc.pid}</span>
+                      )}
+                    </div>
+                    <div className="col-span-1">
+                      {proc.watch ? (
+                        <span className="text-xs px-1.5 py-0.5 rounded font-medium"
+                          style={{ background: "rgba(110,92,255,.15)", color: "#a8a0ff" }}>on</span>
+                      ) : (
+                        <span className="text-muted-foreground/40">—</span>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </section>
+
       </div>
     </div>
   );

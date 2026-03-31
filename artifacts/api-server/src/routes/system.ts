@@ -100,6 +100,52 @@ router.get("/system/info", async (_req, res) => {
   }
 });
 
+router.get("/system/pm2", (_req, res) => {
+  exec("pm2 jlist 2>/dev/null", (err, stdout) => {
+    if (err || !stdout.trim()) {
+      return res.json({ available: false, processes: [] });
+    }
+    try {
+      const raw = JSON.parse(stdout) as {
+        name: string;
+        pm_id: number;
+        pid: number;
+        pm2_env?: {
+          status?: string;
+          pm_uptime?: number;
+          restart_time?: number;
+          exec_interpreter?: string;
+          pm_exec_path?: string;
+          cwd?: string;
+          node_version?: string;
+          watch?: boolean;
+        };
+        monit?: { memory?: number; cpu?: number };
+      }[];
+
+      const processes = raw.map((p) => ({
+        id: p.pm_id,
+        name: p.name,
+        pid: p.pid,
+        status: p.pm2_env?.status ?? "unknown",
+        cpu: p.monit?.cpu ?? 0,
+        memory: p.monit?.memory ?? 0,
+        uptime: p.pm2_env?.pm_uptime ?? 0,
+        restarts: p.pm2_env?.restart_time ?? 0,
+        interpreter: p.pm2_env?.exec_interpreter ?? "node",
+        script: p.pm2_env?.pm_exec_path ?? "",
+        cwd: p.pm2_env?.cwd ?? "",
+        watch: p.pm2_env?.watch ?? false,
+        nodeVersion: p.pm2_env?.node_version ?? "",
+      }));
+
+      res.json({ available: true, processes });
+    } catch {
+      res.json({ available: false, processes: [] });
+    }
+  });
+});
+
 router.post("/system/clear-cache", (_req, res) => {
   exec("sync", (syncErr) => {
     if (syncErr) {

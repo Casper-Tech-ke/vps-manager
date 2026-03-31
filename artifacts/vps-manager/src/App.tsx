@@ -11,6 +11,7 @@ import LoginPage from "@/pages/login";
 import HomePage from "@/pages/home";
 import FileManager from "@/pages/file-manager";
 import DevPage from "@/pages/dev";
+import TermsPage from "@/pages/terms";
 import NotFound from "@/pages/not-found";
 
 const queryClient = new QueryClient({
@@ -77,6 +78,10 @@ function AppRoutes() {
         <ProtectedLayout>
           <DevPage />
         </ProtectedLayout>
+      </Route>
+
+      <Route path="/terms">
+        <TermsPage />
       </Route>
 
       <Route>

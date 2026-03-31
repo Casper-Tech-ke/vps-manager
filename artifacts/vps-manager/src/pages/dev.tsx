@@ -3,10 +3,26 @@ import { Skeleton } from "@/components/ui/skeleton";
 import {
   Github, Send, HeadphonesIcon, Coffee, Star, GitFork,
   ExternalLink, ChevronDown, ChevronUp, Terminal,
-  Copy, Check, AlertTriangle, Eye,
+  Copy, Check, AlertTriangle, Eye, Users, BookOpen, MapPin, Link2,
 } from "lucide-react";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
+
+interface GitHubUser {
+  login: string;
+  name: string | null;
+  avatar_url: string;
+  bio: string | null;
+  location: string | null;
+  blog: string | null;
+  html_url: string;
+  followers: number;
+  following: number;
+  public_repos: number;
+  public_gists: number;
+  company: string | null;
+  created_at: string;
+}
 
 interface RepoInfo {
   full_name: string;
@@ -28,14 +44,13 @@ function fmtNum(n: number): string {
   return String(n);
 }
 
+const GH_HEADERS = { Accept: "application/vnd.github+json" };
+
 function useCopyText(ms = 1500) {
   const [copied, setCopied] = useState<string | null>(null);
   function copy(text: string, id: string) {
     navigator.clipboard.writeText(text).then(
-      () => {
-        setCopied(id);
-        setTimeout(() => setCopied(null), ms);
-      },
+      () => { setCopied(id); setTimeout(() => setCopied(null), ms); },
       () => {
         const el = document.createElement("textarea");
         el.value = text;
@@ -125,9 +140,22 @@ function CodeBlock({ code, id, copy, copied }: { code: string; id: string; copy:
   );
 }
 
+function StatPill({ label, value }: { label: string; value: string | number }) {
+  return (
+    <div className="flex flex-col items-center px-4 py-2.5 rounded-xl"
+      style={{ background: "rgba(110,92,255,.08)", border: "1px solid rgba(110,92,255,.18)" }}>
+      <span className="text-base font-black text-foreground">{fmtNum(Number(value))}</span>
+      <span className="text-xs text-muted-foreground mt-0.5">{label}</span>
+    </div>
+  );
+}
+
 // ── Main page ─────────────────────────────────────────────────────────────────
 
 export default function DevPage() {
+  const [user, setUser] = useState<GitHubUser | null>(null);
+  const [userLoading, setUserLoading] = useState(true);
+  const [userError, setUserError] = useState(false);
   const [repo, setRepo] = useState<RepoInfo | null>(null);
   const [repoLoading, setRepoLoading] = useState(true);
   const [repoError, setRepoError] = useState(false);
@@ -135,14 +163,14 @@ export default function DevPage() {
   const { copied, copy } = useCopyText();
 
   useEffect(() => {
-    fetch("https://api.github.com/repos/Casper-Tech-ke/vps-manager", {
-      headers: { Accept: "application/vnd.github+json" },
-    })
-      .then((r) => {
-        if (!r.ok) throw new Error("GitHub API error");
-        return r.json() as Promise<RepoInfo>;
-      })
-      .then((data) => { setRepo(data); setRepoLoading(false); })
+    fetch("https://api.github.com/users/Casper-Tech-ke", { headers: GH_HEADERS })
+      .then((r) => { if (!r.ok) throw new Error("GitHub API error"); return r.json() as Promise<GitHubUser>; })
+      .then((d) => { setUser(d); setUserLoading(false); })
+      .catch(() => { setUserError(true); setUserLoading(false); });
+
+    fetch("https://api.github.com/repos/Casper-Tech-ke/vps-manager", { headers: GH_HEADERS })
+      .then((r) => { if (!r.ok) throw new Error("GitHub API error"); return r.json() as Promise<RepoInfo>; })
+      .then((d) => { setRepo(d); setRepoLoading(false); })
       .catch(() => { setRepoError(true); setRepoLoading(false); });
   }, []);
 
@@ -151,9 +179,7 @@ export default function DevPage() {
       {/* Hero */}
       <div
         className="px-6 py-10"
-        style={{
-          background: "radial-gradient(ellipse 80% 60% at 50% 0%, rgba(110,92,255,.14) 0%, transparent 70%)",
-        }}
+        style={{ background: "radial-gradient(ellipse 80% 60% at 50% 0%, rgba(110,92,255,.14) 0%, transparent 70%)" }}
       >
         <div className="max-w-screen-md mx-auto text-center">
           <div className="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-widest mb-4 px-3 py-1.5 rounded-full"
@@ -176,53 +202,105 @@ export default function DevPage() {
         <section>
           <SectionHeader>The Developer</SectionHeader>
           <Card>
-            <div className="flex flex-col sm:flex-row items-center sm:items-start gap-6">
-              {/* Avatar */}
-              <div className="flex-shrink-0">
-                <div
-                  className="w-24 h-24 rounded-2xl flex items-center justify-center text-4xl font-black select-none"
-                  style={{ background: "linear-gradient(135deg,#6e5cff,#0ff4c6)", color: "#08090d" }}
-                >
-                  TC
+            {userLoading ? (
+              <div className="flex flex-col sm:flex-row gap-6">
+                <Skeleton className="w-24 h-24 rounded-2xl flex-shrink-0" />
+                <div className="flex-1 space-y-3">
+                  <Skeleton className="h-7 w-48 rounded" />
+                  <Skeleton className="h-4 w-32 rounded" />
+                  <Skeleton className="h-4 w-full rounded" />
+                  <Skeleton className="h-4 w-3/4 rounded" />
+                  <div className="flex gap-2 pt-1">
+                    <Skeleton className="h-8 w-36 rounded-xl" />
+                    <Skeleton className="h-8 w-36 rounded-xl" />
+                  </div>
                 </div>
               </div>
-
-              {/* Bio */}
-              <div className="flex-1 text-center sm:text-left">
-                <h2 className="text-2xl font-black tracking-tight mb-0.5">
-                  <span className="brand-gradient">TRABY</span>{" "}
-                  <span className="text-foreground">CASPER</span>
-                </h2>
-                <p className="text-sm text-muted-foreground mb-1">
-                  Full-stack developer · xcasper.space
-                </p>
-                <p className="text-sm text-foreground/70 leading-relaxed mb-4">
-                  Building developer tools and open-source software under the xcasper.space brand.
-                  XCASPER MANAGER is a lightweight, self-hosted VPS control panel — no SaaS, no subscriptions, just code.
-                </p>
-
-                <div className="flex flex-wrap gap-2 justify-center sm:justify-start">
-                  <a
-                    href="https://github.com/Casper-Tech-ke"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold transition-all hover:opacity-80"
-                    style={{ background: "rgba(110,92,255,.18)", color: "#a8a0ff", border: "1px solid rgba(110,92,255,.35)" }}
-                  >
-                    <Github className="w-4 h-4" /> github.com/Casper-Tech-ke
-                  </a>
-                  <a
-                    href="https://t.me/casper_tech_ke"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold transition-all hover:opacity-80"
-                    style={{ background: "rgba(15,244,198,.08)", color: "#0ff4c6", border: "1px solid rgba(15,244,198,.2)" }}
-                  >
-                    <Send className="w-4 h-4" /> t.me/casper_tech_ke
-                  </a>
+            ) : userError ? (
+              <div className="flex flex-col sm:flex-row items-center sm:items-start gap-6">
+                <div className="w-24 h-24 rounded-2xl flex items-center justify-center text-4xl font-black select-none flex-shrink-0"
+                  style={{ background: "linear-gradient(135deg,#6e5cff,#0ff4c6)", color: "#08090d" }}>TC</div>
+                <div className="flex-1 text-center sm:text-left">
+                  <h2 className="text-2xl font-black tracking-tight mb-0.5">
+                    <span className="brand-gradient">TRABY</span>{" "}
+                    <span className="text-foreground">CASPER</span>
+                  </h2>
+                  <p className="text-sm text-muted-foreground mb-1">Full-stack developer · xcasper.space</p>
+                  <p className="text-xs text-yellow-500/70 mt-1 mb-3 flex items-center gap-1">
+                    <AlertTriangle className="w-3 h-3" /> Could not reach GitHub API — showing static info
+                  </p>
+                  <div className="flex flex-wrap gap-2 justify-center sm:justify-start">
+                    <a href="https://github.com/Casper-Tech-ke" target="_blank" rel="noopener noreferrer"
+                      className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold transition-all hover:opacity-80"
+                      style={{ background: "rgba(110,92,255,.18)", color: "#a8a0ff", border: "1px solid rgba(110,92,255,.35)" }}>
+                      <Github className="w-4 h-4" /> github.com/Casper-Tech-ke
+                    </a>
+                    <a href="https://t.me/casper_tech_ke" target="_blank" rel="noopener noreferrer"
+                      className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold transition-all hover:opacity-80"
+                      style={{ background: "rgba(15,244,198,.08)", color: "#0ff4c6", border: "1px solid rgba(15,244,198,.2)" }}>
+                      <Send className="w-4 h-4" /> t.me/casper_tech_ke
+                    </a>
+                  </div>
                 </div>
               </div>
-            </div>
+            ) : user ? (
+              <div className="flex flex-col sm:flex-row items-center sm:items-start gap-6">
+                {/* GitHub avatar */}
+                <div className="flex-shrink-0">
+                  <img
+                    src={user.avatar_url}
+                    alt={user.name ?? user.login}
+                    className="w-24 h-24 rounded-2xl object-cover"
+                    style={{ border: "2px solid rgba(110,92,255,.3)" }}
+                  />
+                </div>
+
+                {/* Bio */}
+                <div className="flex-1 text-center sm:text-left">
+                  <h2 className="text-2xl font-black tracking-tight mb-0.5">
+                    <span className="brand-gradient">{(user.name ?? user.login).split(" ")[0]}</span>{" "}
+                    <span className="text-foreground">{(user.name ?? user.login).split(" ").slice(1).join(" ") || ""}</span>
+                  </h2>
+                  <p className="text-sm text-muted-foreground mb-1">
+                    @{user.login}
+                    {user.company && <span> · {user.company}</span>}
+                    {user.location && <span> · <MapPin className="w-3 h-3 inline" /> {user.location}</span>}
+                  </p>
+                  {user.bio && (
+                    <p className="text-sm text-foreground/70 leading-relaxed mb-3">{user.bio}</p>
+                  )}
+
+                  {/* Stats row */}
+                  <div className="flex flex-wrap gap-2 justify-center sm:justify-start mb-4">
+                    <StatPill label="Followers" value={user.followers} />
+                    <StatPill label="Following" value={user.following} />
+                    <StatPill label="Repos" value={user.public_repos} />
+                    {user.public_gists > 0 && <StatPill label="Gists" value={user.public_gists} />}
+                  </div>
+
+                  <div className="flex flex-wrap gap-2 justify-center sm:justify-start">
+                    <a href={user.html_url} target="_blank" rel="noopener noreferrer"
+                      className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold transition-all hover:opacity-80"
+                      style={{ background: "rgba(110,92,255,.18)", color: "#a8a0ff", border: "1px solid rgba(110,92,255,.35)" }}>
+                      <Github className="w-4 h-4" /> {user.html_url.replace("https://", "")}
+                    </a>
+                    <a href="https://t.me/casper_tech_ke" target="_blank" rel="noopener noreferrer"
+                      className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold transition-all hover:opacity-80"
+                      style={{ background: "rgba(15,244,198,.08)", color: "#0ff4c6", border: "1px solid rgba(15,244,198,.2)" }}>
+                      <Send className="w-4 h-4" /> t.me/casper_tech_ke
+                    </a>
+                    {user.blog && (
+                      <a href={user.blog.startsWith("http") ? user.blog : `https://${user.blog}`}
+                        target="_blank" rel="noopener noreferrer"
+                        className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold transition-all hover:opacity-80"
+                        style={{ background: "rgba(15,244,198,.06)", color: "#0ff4c6", border: "1px solid rgba(15,244,198,.15)" }}>
+                        <Link2 className="w-4 h-4" /> {user.blog.replace(/^https?:\/\//, "")}
+                      </a>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ) : null}
           </Card>
         </section>
 
@@ -247,44 +325,36 @@ export default function DevPage() {
               <div className="flex flex-col items-center gap-3 py-4 text-muted-foreground">
                 <AlertTriangle className="w-8 h-8 text-yellow-500/60" />
                 <p className="text-sm">Could not reach GitHub API.</p>
-                <a
-                  href="https://github.com/Casper-Tech-ke/vps-manager"
-                  target="_blank"
-                  rel="noopener noreferrer"
+                <a href="https://github.com/Casper-Tech-ke/vps-manager" target="_blank" rel="noopener noreferrer"
                   className="flex items-center gap-2 text-sm font-semibold hover:text-foreground transition-colors"
-                  style={{ color: "#a8a0ff" }}
-                >
+                  style={{ color: "#a8a0ff" }}>
                   <Github className="w-4 h-4" /> View on GitHub <ExternalLink className="w-3 h-3" />
                 </a>
               </div>
             </Card>
-          ) : repo && (
+          ) : repo ? (
             <Card>
               {/* Repo header */}
               <div className="flex items-start justify-between gap-4 mb-3">
                 <div className="flex items-center gap-3">
-                  <div
-                    className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0"
-                    style={{ background: "linear-gradient(135deg,#6e5cff,#0ff4c6)" }}
-                  >
+                  <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0"
+                    style={{ background: "linear-gradient(135deg,#6e5cff,#0ff4c6)" }}>
                     <Github className="w-5 h-5 text-[#08090d]" />
                   </div>
                   <div>
-                    <a
-                      href={repo.html_url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-base font-bold hover:text-primary transition-colors"
-                    >
+                    <a href={repo.html_url} target="_blank" rel="noopener noreferrer"
+                      className="text-base font-bold hover:text-primary transition-colors">
                       {repo.full_name}
                     </a>
                     {repo.license && (
-                      <span className="ml-2 text-xs px-1.5 py-0.5 rounded" style={{ background: "rgba(110,92,255,.15)", color: "#a8a0ff" }}>
+                      <span className="ml-2 text-xs px-1.5 py-0.5 rounded"
+                        style={{ background: "rgba(110,92,255,.15)", color: "#a8a0ff" }}>
                         {repo.license.spdx_id}
                       </span>
                     )}
                     {repo.language && (
-                      <span className="ml-1.5 text-xs px-1.5 py-0.5 rounded" style={{ background: "rgba(15,244,198,.1)", color: "#0ff4c6" }}>
+                      <span className="ml-1.5 text-xs px-1.5 py-0.5 rounded"
+                        style={{ background: "rgba(15,244,198,.1)", color: "#0ff4c6" }}>
                         {repo.language}
                       </span>
                     )}
@@ -314,41 +384,27 @@ export default function DevPage() {
 
               {/* Action buttons */}
               <div className="flex flex-wrap gap-3">
-                <a
-                  href="https://github.com/Casper-Tech-ke/vps-manager/fork"
-                  target="_blank"
-                  rel="noopener noreferrer"
+                <a href="https://github.com/Casper-Tech-ke/vps-manager/fork" target="_blank" rel="noopener noreferrer"
                   className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold transition-opacity hover:opacity-80"
-                  style={{ background: "linear-gradient(135deg,#6e5cff,#0ff4c6)", color: "#08090d" }}
-                >
+                  style={{ background: "linear-gradient(135deg,#6e5cff,#0ff4c6)", color: "#08090d" }}>
                   <GitFork className="w-4 h-4" /> Fork on GitHub
                 </a>
-                <a
-                  href={repo.html_url}
-                  target="_blank"
-                  rel="noopener noreferrer"
+                <a href={repo.html_url} target="_blank" rel="noopener noreferrer"
                   className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold border transition-colors hover:text-foreground"
-                  style={{ borderColor: "rgba(110,92,255,.35)", color: "#a8a0ff" }}
-                >
+                  style={{ borderColor: "rgba(110,92,255,.35)", color: "#a8a0ff" }}>
                   <Github className="w-4 h-4" /> View Source <ExternalLink className="w-3 h-3" />
                 </a>
-                <a
-                  href={`${repo.html_url}/stargazers`}
-                  target="_blank"
-                  rel="noopener noreferrer"
+                <a href={`${repo.html_url}/stargazers`} target="_blank" rel="noopener noreferrer"
                   className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold border transition-colors hover:text-foreground"
-                  style={{ borderColor: "rgba(15,244,198,.2)", color: "#0ff4c6" }}
-                >
+                  style={{ borderColor: "rgba(15,244,198,.2)", color: "#0ff4c6" }}>
                   <Star className="w-4 h-4" /> Star
                 </a>
               </div>
 
-              {/* Fork walkthrough collapsible */}
+              {/* Fork walkthrough */}
               <div className="mt-5 border-t pt-4" style={{ borderColor: "rgba(110,92,255,.18)" }}>
-                <button
-                  onClick={() => setWalkthroughOpen((o) => !o)}
-                  className="flex items-center justify-between w-full text-sm font-semibold text-foreground hover:text-primary transition-colors"
-                >
+                <button onClick={() => setWalkthroughOpen((o) => !o)}
+                  className="flex items-center justify-between w-full text-sm font-semibold text-foreground hover:text-primary transition-colors">
                   <span className="flex items-center gap-2">
                     <Terminal className="w-4 h-4" style={{ color: "#0ff4c6" }} />
                     How to fork &amp; self-host — step by step
@@ -365,40 +421,65 @@ export default function DevPage() {
                       <div key={idx}>
                         <p className="text-sm font-semibold text-foreground mb-1">{step.title}</p>
                         <p className="text-xs text-muted-foreground mb-1">{step.desc}</p>
-                        {step.cmd && (
-                          <CodeBlock
-                            code={step.cmd}
-                            id={`step-${idx}`}
-                            copy={copy}
-                            copied={copied}
-                          />
-                        )}
+                        {step.cmd && <CodeBlock code={step.cmd} id={`step-${idx}`} copy={copy} copied={copied} />}
                       </div>
                     ))}
-
-                    <div
-                      className="rounded-xl p-4 text-sm"
-                      style={{ background: "rgba(15,244,198,.06)", border: "1px solid rgba(15,244,198,.18)" }}
-                    >
+                    <div className="rounded-xl p-4 text-sm"
+                      style={{ background: "rgba(15,244,198,.06)", border: "1px solid rgba(15,244,198,.18)" }}>
                       <p className="font-semibold mb-1" style={{ color: "#0ff4c6" }}>Need help?</p>
                       <p className="text-muted-foreground text-xs">
                         Open an issue on GitHub or reach out on Telegram (
-                        <a href="https://t.me/casper_tech_ke" target="_blank" rel="noopener noreferrer" className="underline hover:text-foreground">@casper_tech_ke</a>
-                        ).
+                        <a href="https://t.me/casper_tech_ke" target="_blank" rel="noopener noreferrer"
+                          className="underline hover:text-foreground">@casper_tech_ke</a>).
                       </p>
                     </div>
                   </div>
                 )}
               </div>
             </Card>
-          )}
+          ) : null}
         </section>
+
+        {/* ── GitHub repos overview (from user profile) ── */}
+        {user && (
+          <section>
+            <SectionHeader>GitHub Profile</SectionHeader>
+            <Card>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-5">
+                {[
+                  { icon: BookOpen, label: "Public Repos", value: user.public_repos, color: "#6e5cff" },
+                  { icon: Users, label: "Followers", value: user.followers, color: "#0ff4c6" },
+                  { icon: Users, label: "Following", value: user.following, color: "#6e5cff" },
+                  { icon: BookOpen, label: "Public Gists", value: user.public_gists, color: "#0ff4c6" },
+                ].map(({ icon: Icon, label, value, color }) => (
+                  <div key={label} className="flex flex-col gap-1 p-3 rounded-xl"
+                    style={{ background: "rgba(110,92,255,.06)", border: "1px solid rgba(110,92,255,.12)" }}>
+                    <Icon className="w-4 h-4 mb-1" style={{ color }} />
+                    <span className="text-xl font-black text-foreground">{fmtNum(value)}</span>
+                    <span className="text-xs text-muted-foreground">{label}</span>
+                  </div>
+                ))}
+              </div>
+              <div className="flex flex-wrap gap-3">
+                <a href={`${user.html_url}?tab=repositories`} target="_blank" rel="noopener noreferrer"
+                  className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold transition-opacity hover:opacity-80"
+                  style={{ background: "rgba(110,92,255,.18)", color: "#a8a0ff", border: "1px solid rgba(110,92,255,.3)" }}>
+                  <BookOpen className="w-4 h-4" /> All Repositories
+                </a>
+                <a href={`${user.html_url}?tab=followers`} target="_blank" rel="noopener noreferrer"
+                  className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold transition-opacity hover:opacity-80"
+                  style={{ background: "rgba(15,244,198,.08)", color: "#0ff4c6", border: "1px solid rgba(15,244,198,.18)" }}>
+                  <Users className="w-4 h-4" /> Followers
+                </a>
+              </div>
+            </Card>
+          </section>
+        )}
 
         {/* ── Support section ── */}
         <section>
-          <SectionHeader>Support & Community</SectionHeader>
+          <SectionHeader>Support &amp; Community</SectionHeader>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-
             <Card className="flex flex-col gap-4">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0"
@@ -410,13 +491,9 @@ export default function DevPage() {
                   <p className="text-xs text-muted-foreground">Get help with installation or usage</p>
                 </div>
               </div>
-              <a
-                href="https://support.xcasper.space"
-                target="_blank"
-                rel="noopener noreferrer"
+              <a href="https://support.xcasper.space" target="_blank" rel="noopener noreferrer"
                 className="flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-semibold transition-opacity hover:opacity-80 mt-auto"
-                style={{ background: "rgba(110,92,255,.2)", color: "#a8a0ff", border: "1px solid rgba(110,92,255,.35)" }}
-              >
+                style={{ background: "rgba(110,92,255,.2)", color: "#a8a0ff", border: "1px solid rgba(110,92,255,.35)" }}>
                 <HeadphonesIcon className="w-4 h-4" /> Open Support Portal
               </a>
             </Card>
@@ -432,13 +509,9 @@ export default function DevPage() {
                   <p className="text-xs text-muted-foreground">Support XCASPER MANAGER development</p>
                 </div>
               </div>
-              <a
-                href="https://payments.xcasper.space"
-                target="_blank"
-                rel="noopener noreferrer"
+              <a href="https://payments.xcasper.space" target="_blank" rel="noopener noreferrer"
                 className="flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-bold transition-opacity hover:opacity-80 mt-auto"
-                style={{ background: "linear-gradient(135deg,#6e5cff,#0ff4c6)", color: "#08090d" }}
-              >
+                style={{ background: "linear-gradient(135deg,#6e5cff,#0ff4c6)", color: "#08090d" }}>
                 <Coffee className="w-4 h-4" /> Buy Me a Coffee
               </a>
             </Card>
@@ -452,14 +525,9 @@ export default function DevPage() {
                   { href: "https://support.xcasper.space", label: "Support", icon: HeadphonesIcon, color: "#a8a0ff", bg: "rgba(110,92,255,.15)", border: "rgba(110,92,255,.3)" },
                   { href: "https://xcasper.space", label: "xcasper.space", icon: ExternalLink, color: "#0ff4c6", bg: "rgba(15,244,198,.08)", border: "rgba(15,244,198,.2)" },
                 ].map(({ href, label, icon: Icon, color, bg, border }) => (
-                  <a
-                    key={href}
-                    href={href}
-                    target="_blank"
-                    rel="noopener noreferrer"
+                  <a key={href} href={href} target="_blank" rel="noopener noreferrer"
                     className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-opacity hover:opacity-80"
-                    style={{ background: bg, color, border: `1px solid ${border}` }}
-                  >
+                    style={{ background: bg, color, border: `1px solid ${border}` }}>
                     <Icon className="w-4 h-4" /> {label}
                   </a>
                 ))}

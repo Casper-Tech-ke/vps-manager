@@ -1,8 +1,8 @@
+import { Link } from "wouter";
 import { useAuth } from "@/contexts/auth-context";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import { Coffee, Github, Send, HeartHandshake } from "lucide-react";
+import { Coffee, Github, Send, HeartHandshake, ExternalLink } from "lucide-react";
 
 export function WelcomeModal() {
   const { isAuthenticated, welcomeShown, dismissWelcome } = useAuth();
@@ -20,7 +20,7 @@ export function WelcomeModal() {
         <div className="h-1 w-full brand-gradient-bg" />
 
         <div className="p-6">
-          <DialogHeader className="mb-4">
+          <DialogHeader className="mb-5">
             <div className="flex items-center gap-3 mb-2">
               <div className="w-10 h-10 rounded-xl flex items-center justify-center"
                 style={{ background: "linear-gradient(135deg,#6e5cff,#0ff4c6)" }}>
@@ -35,52 +35,32 @@ export function WelcomeModal() {
             </div>
           </DialogHeader>
 
-          <ScrollArea className="h-64 pr-2">
-            <div className="space-y-4 text-sm text-muted-foreground leading-relaxed">
-              <section>
-                <h3 className="text-xs font-bold uppercase tracking-widest mb-2" style={{ color: "#0ff4c6" }}>
-                  Terms of Service
-                </h3>
-                <p>
-                  XCASPER MANAGER is a local VPS control panel that provides direct access to the
-                  server filesystem and shell. By using this software you agree to use it
-                  responsibly and only on systems you own or are authorised to manage.
-                </p>
-                <p className="mt-2">
-                  The developer accepts no liability for data loss, security breaches, or
-                  misconfiguration resulting from use of this tool. Always maintain backups.
-                </p>
-              </section>
-
-              <section>
-                <h3 className="text-xs font-bold uppercase tracking-widest mb-2" style={{ color: "#0ff4c6" }}>
-                  Privacy Policy
-                </h3>
-                <p>
-                  XCASPER MANAGER operates entirely on your own infrastructure. No telemetry,
-                  analytics, or usage data is collected or transmitted to third parties. Your files
-                  and commands remain entirely on your server.
-                </p>
-                <p className="mt-2">
-                  The API key you provide is stored only in your browser's session storage and is
-                  never sent anywhere other than your own server's authentication endpoint.
-                </p>
-              </section>
-
-              <section>
-                <h3 className="text-xs font-bold uppercase tracking-widest mb-2" style={{ color: "#0ff4c6" }}>
-                  Disclaimer
-                </h3>
-                <p>
-                  This software is provided "as is", without warranty of any kind. Use at your own
-                  risk. The terminal and file manager have full access to the server filesystem.
-                </p>
-              </section>
-            </div>
-          </ScrollArea>
+          {/* Summary blurb */}
+          <div
+            className="rounded-xl p-4 mb-5 space-y-2 text-sm text-muted-foreground leading-relaxed"
+            style={{ background: "#08090d", border: "1px solid rgba(110,92,255,.15)" }}
+          >
+            <p>
+              By continuing you confirm that you are using this software
+              <strong className="text-foreground"> on systems you own or are authorised to manage</strong>,
+              and that you have read and agree to the Terms of Service and Privacy Policy.
+            </p>
+            <p className="text-xs">
+              XCASPER MANAGER operates entirely on your own infrastructure.
+              No telemetry or usage data is ever collected or transmitted.
+            </p>
+            <Link
+              href="/terms"
+              onClick={dismissWelcome}
+              className="inline-flex items-center gap-1 text-xs font-medium hover:text-foreground transition-colors"
+              style={{ color: "#a8a0ff" }}
+            >
+              Read full Terms, Privacy &amp; Disclaimer <ExternalLink className="w-3 h-3" />
+            </Link>
+          </div>
 
           {/* Community links */}
-          <div className="flex items-center gap-2 mt-4 pt-4 border-t border-border flex-wrap">
+          <div className="flex items-center gap-2 mb-4 flex-wrap">
             <a
               href="https://payments.xcasper.space"
               target="_blank"
@@ -110,11 +90,11 @@ export function WelcomeModal() {
 
           <Button
             onClick={dismissWelcome}
-            className="w-full mt-4 font-semibold h-10"
+            className="w-full font-semibold h-10"
             style={{ background: "linear-gradient(135deg,#6e5cff,#0ff4c6)", color: "#08090d", border: "none" }}
           >
             <HeartHandshake className="w-4 h-4 mr-2" />
-            I Understand — Let's Go
+            I Agree — Let's Go
           </Button>
         </div>
       </DialogContent>

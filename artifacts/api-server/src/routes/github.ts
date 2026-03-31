@@ -99,4 +99,21 @@ router.delete("/github/social-accounts", async (req, res) => {
   }
 });
 
+// PATCH /github/repo/:owner/:repo — update repository metadata (description, homepage, etc.)
+router.patch("/github/repo/:owner/:repo", async (req, res) => {
+  if (!GH_TOKEN) return res.status(503).json({ error: "GITHUB_PERSONAL_ACCESS_TOKEN not configured" });
+  const { owner, repo } = req.params;
+  const allowed = ["name", "description", "homepage", "private", "has_issues", "has_projects", "has_wiki", "default_branch"];
+  const body: Record<string, unknown> = {};
+  for (const k of allowed) {
+    if (k in req.body) body[k] = req.body[k];
+  }
+  try {
+    const { status, data } = await ghRequest("PATCH", `/repos/${owner}/${repo}`, body);
+    res.status(status).json(data);
+  } catch (err) {
+    res.status(500).json({ error: String(err) });
+  }
+});
+
 export default router;

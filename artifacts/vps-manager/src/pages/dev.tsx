@@ -180,7 +180,7 @@ export default function DevPage() {
   const [editOpen, setEditOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [profileForm, setProfileForm] = useState({
-    name: "", bio: "", location: "", blog: "", company: "", twitter_username: "",
+    name: "", bio: "", location: "", blog: "", company: "", twitter_username: "", repoDescription: "",
   });
   const [socials, setSocials] = useState<SocialAccount[]>([]);
   const [socialsLoading, setSocialsLoading] = useState(false);
@@ -208,26 +208,43 @@ export default function DevPage() {
         blog: user.blog ?? "",
         company: user.company ?? "",
         twitter_username: user.twitter_username ?? "",
+        repoDescription: repo?.description ?? "",
       });
     }
     fetchSocials();
     setEditOpen(true);
-  }, [user, fetchSocials]);
+  }, [user, repo, fetchSocials]);
 
   const saveProfile = useCallback(async () => {
     setSaving(true);
     try {
-      const r = await fetch("/api/github/profile", {
-        method: "PATCH",
-        headers: authHeaders,
-        body: JSON.stringify(profileForm),
-      });
-      const data = await r.json() as GitHubUser & { message?: string };
-      if (!r.ok) {
-        toast({ title: "Update failed", description: data.message ?? "GitHub API error", variant: "destructive" });
+      const { repoDescription, ...profileFields } = profileForm;
+
+      const [profileRes, repoRes] = await Promise.all([
+        fetch("/api/github/profile", {
+          method: "PATCH",
+          headers: authHeaders,
+          body: JSON.stringify(profileFields),
+        }),
+        fetch("/api/github/repo/Casper-Tech-ke/vps-manager", {
+          method: "PATCH",
+          headers: authHeaders,
+          body: JSON.stringify({ description: repoDescription }),
+        }),
+      ]);
+
+      const profileData = await profileRes.json() as GitHubUser & { message?: string };
+      const repoData = await repoRes.json() as RepoInfo & { message?: string };
+
+      if (!profileRes.ok) {
+        toast({ title: "Profile update failed", description: profileData.message ?? "GitHub API error", variant: "destructive" });
+      } else if (!repoRes.ok) {
+        setUser(profileData);
+        toast({ title: "Repo description update failed", description: repoData.message ?? "GitHub API error", variant: "destructive" });
       } else {
-        setUser(data);
-        toast({ title: "Profile updated", description: "Your GitHub profile has been saved." });
+        setUser(profileData);
+        setRepo(repoData);
+        toast({ title: "Saved", description: "Profile and repository description updated." });
         setEditOpen(false);
       }
     } catch {
@@ -422,6 +439,19 @@ export default function DevPage() {
                           style={{ background: "#08090d", borderColor: "rgba(110,92,255,.3)" }} />
                       </div>
                     </div>
+                  </div>
+
+                  {/* Repo description — full width */}
+                  <div className="mb-4">
+                    <label className="block text-xs font-semibold text-muted-foreground uppercase tracking-widest mb-1.5">
+                      <Github className="w-3 h-3 inline mr-1" />Repository Description
+                      <span className="ml-2 normal-case font-normal" style={{ color: "#6e5cff" }}>vps-manager</span>
+                    </label>
+                    <Input value={profileForm.repoDescription}
+                      onChange={(e) => setProfileForm((f) => ({ ...f, repoDescription: e.target.value }))}
+                      placeholder="Browser-based local file manager for xcasper.space"
+                      className="h-9 text-sm"
+                      style={{ background: "#08090d", borderColor: "rgba(110,92,255,.3)" }} />
                   </div>
 
                   <div className="mb-5">

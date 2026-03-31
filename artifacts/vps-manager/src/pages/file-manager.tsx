@@ -615,8 +615,8 @@ export default function FileManager({ initialPanel = null }: FileManagerProps) {
       {/* ── Top bar ── */}
       <header className="flex-shrink-0 h-12 bg-card border-b border-border flex items-center gap-2 px-3">
 
-        {/* File list toggle — shown when right panel is active */}
-        {rightPanelOpen && (
+        {/* File list toggle — only shown when file viewer is open (sidebar is shown for terminal/logs) */}
+        {rightPanel === "file" && (
           <Button
             variant="ghost" size="icon"
             className="h-8 w-8 flex-shrink-0 text-muted-foreground hover:text-foreground"
@@ -712,15 +712,19 @@ export default function FileManager({ initialPanel = null }: FileManagerProps) {
       {/* ── Main ── */}
       <div className="flex flex-1 min-h-0">
 
-        {/* File list — full width when no right panel */}
-        {!rightPanelOpen && (
-          <div className="flex flex-col flex-1 min-h-0">
-            {/* Column headers */}
-            <div className="grid grid-cols-12 gap-2 px-4 py-2 bg-muted/20 border-b border-border font-mono text-xs text-muted-foreground font-medium flex-shrink-0 select-none">
-              <div className="col-span-7">Name</div>
-              <div className="col-span-2 text-right hidden sm:block">Size</div>
-              <div className="col-span-3 text-right hidden sm:block">Modified</div>
-            </div>
+        {/* File list — full width when no panel; sidebar when terminal/logs open */}
+        {(rightPanel === null || rightPanel === "terminal" || rightPanel === "logs") && (
+          <div className={`flex flex-col min-h-0 border-r border-border ${
+            rightPanelOpen ? "w-64 flex-shrink-0" : "flex-1"
+          }`}>
+            {/* Column headers — only when full width */}
+            {!rightPanelOpen && (
+              <div className="grid grid-cols-12 gap-2 px-4 py-2 bg-muted/20 border-b border-border font-mono text-xs text-muted-foreground font-medium flex-shrink-0 select-none">
+                <div className="col-span-7">Name</div>
+                <div className="col-span-2 text-right hidden sm:block">Size</div>
+                <div className="col-span-3 text-right hidden sm:block">Modified</div>
+              </div>
+            )}
             <FileList />
             <div className="h-7 border-t border-border bg-card/20 flex items-center px-4 flex-shrink-0">
               <span className="font-mono text-xs text-muted-foreground/50">{filteredEntries.length} items</span>

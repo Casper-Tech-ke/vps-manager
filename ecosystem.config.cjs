@@ -11,11 +11,13 @@ module.exports = {
       max_memory_restart: "300M",
       env: {
         NODE_ENV: "production",
-        PORT: 8080,
+        API_KEY: "asdfghjklm.",
+        PORT: 3001,
       },
       env_production: {
         NODE_ENV: "production",
-        PORT: 8080,
+        API_KEY: "asdfghjklm.",
+        PORT: 3001,
       },
       error_file: "./logs/api-error.log",
       out_file: "./logs/api-out.log",
